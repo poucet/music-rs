@@ -5,6 +5,46 @@ format is stated once in AGENTS.md §2.
 
 ## Unreleased
 
+#### Two corrections to the superset (`FUGUECRATE`) · 2026-09-03 22:29 · tvmrstly
+
+Both were found while building the superset, filed rather than fixed, and
+released by Chris on 2026-09-03. The 12-fixture wire-compat gate is green
+**unchanged** across both — the proof that nothing already accepted moved.
+
+- **The crate re-parses its own serialized output.** It did not before. The
+  `#[serde(untagged)]` helpers for `NoteItem`, `CcPointItem` and
+  `ParamPointItem` typed their array arm `serde_json::Value`, which matches a
+  JSON *object* too — so the object form that `Serialize` emits was swallowed
+  by the array arm and then failed inside it. `from_str(to_string(f))` failed
+  for any fugue with notes, CCs or params, and the object form that those
+  types' doc comments and nexus's `AI_SAMPLER_MCP.md:43` advertise had never
+  worked. The arms are now `Vec<serde_json::Value>`, disjoint by shape.
+  **Additive**: JSON that used to error now parses; nothing that parsed
+  changed meaning, and `malformed_points_are_still_rejected` pins that the
+  array form did not get looser.
+- **A per-note lane's `interpolation` is the default for points that name no
+  curve of their own** — Droplets' semantics for `CompactPitchBend`, which is
+  where the shape came from. Distinguishing *absent* from an explicit `"none"`
+  needs a curve that can be absent, so per-note lanes get their own point type,
+  `PerNotePoint` (`{beat, value, curve: Option<InterpolationMode>}`), instead of
+  reusing `ParamPointItem`. Resolution is two levels and no more: the point's
+  curve wins, else the lane's. **`ccs` and `params` are untouched** — a
+  fugue-level curve default is a third level and stays rejected (FUGUE-API.md
+  §2.3).
+
+Along the way the `[beat, value, curve?]` array form — which was written out
+three times and would have become four — moved into one `parse_point_array`
+helper, parameterised by how each kind reads its value. Error messages are
+byte-identical.
+
+29 tests (was 24); `cargo clippy --workspace --all-targets` 0 warnings. Both
+`known_defect_*` tests are gone, replaced by the positive properties they stood
+in for: `a_fugue_survives_its_own_serialization` over all 12 fixtures,
+`the_documented_object_form_parses_and_agrees_with_the_array_form`,
+`every_superset_field_round_trips` (now over *every* field, with clippy
+enforcing that a new field breaks it until round-tripped), and
+`an_inherited_curve_survives_a_round_trip_as_an_absence`.
+
 #### `simply-fugue`, widened into the shared superset (`FUGUECRATE`) · 2026-09-03 22:11 · zskpmwqu
 
 The fugue wire format both Nexus and Flux will speak. Additive only: every new

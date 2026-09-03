@@ -4,9 +4,11 @@
 //! `wire_compat.rs`. This file is the other direction: that the fields added
 //! for Flux and for Droplets-shaped JSON actually work.
 
+use std::collections::HashMap;
+
 use simply_fugue::{
     CancelTarget, CompositeFugue, FugueEvent, InterpolationMode, LoopMode, PerNoteLane,
-    QuantizeMode, TimedFugueEvent,
+    PerNotePoint, QuantizeMode, TimedFugueEvent,
 };
 
 // --- the two new mode variants, and how they are spelled on the wire ---------
@@ -156,16 +158,25 @@ fn per_note_events_parse_without_an_interpolation_field() {
     );
 }
 
-/// The lane's own `interpolation` is carried but is deliberately not folded
-/// into its points — see [`PerNoteLane::interpolation`]. Pinned, because doing
-/// it silently would be a second curve-precedence level nobody has ruled on.
+/// Curve resolution has exactly two levels: **a point's own curve wins; a point
+/// that names none takes the lane's `interpolation`.** Droplets' semantics for
+/// the shape this was taken from.
+///
+/// Both branches, in one lane, so the precedence is pinned and not just the
+/// happy path. Note the third point says `"none"` explicitly — that is a
+/// *choice of stepped*, not an absence, and it must survive the lane's default.
 #[test]
-fn a_lanes_own_interpolation_does_not_override_its_points() {
+fn a_lanes_interpolation_fills_in_only_for_points_without_a_curve() {
     let json = r#"{"pitch_bends":[
-        {"note":60,"interpolation":"linear","points":[[0,0],[1,1,"exp"]]}
+        {"note":60,"interpolation":"linear","points":[[0,0],[1,1,"exp"],[2,0,"none"]]}
     ]}"#;
     let fugue: CompositeFugue = serde_json::from_str(json).unwrap();
     assert_eq!(fugue.pitch_bends[0].interpolation, InterpolationMode::Linear);
+    assert_eq!(
+        fugue.pitch_bends[0].points.iter().map(|p| p.curve).collect::<Vec<_>>(),
+        vec![None, Some(InterpolationMode::Exp), Some(InterpolationMode::None)],
+        "an absent curve must parse as None, distinct from an explicit \"none\""
+    );
 
     let curves: Vec<_> = fugue
         .compile()
@@ -176,23 +187,84 @@ fn a_lanes_own_interpolation_does_not_override_its_points() {
             _ => None,
         })
         .collect();
-    assert_eq!(curves, vec![InterpolationMode::None, InterpolationMode::Exp]);
+    assert_eq!(
+        curves,
+        vec![
+            InterpolationMode::Linear, // inherited from the lane
+            InterpolationMode::Exp,    // the point's own
+            InterpolationMode::None,   // explicitly stepped, not inherited
+        ]
+    );
+}
+
+/// With no lane `interpolation` given, the lane default is `None` — so a
+/// curve-less per-note lane is stepped, exactly as a curve-less CC lane is.
+#[test]
+fn a_lane_without_an_interpolation_leaves_its_points_stepped() {
+    let fugue: CompositeFugue =
+        serde_json::from_str(r#"{"pressures":[{"note":60,"points":[[0,0],[1,1]]}]}"#).unwrap();
+    assert_eq!(fugue.pressures[0].interpolation, InterpolationMode::None);
+    let curves: Vec<_> = fugue
+        .compile()
+        .events
+        .iter()
+        .filter_map(|e| match e.event {
+            FugueEvent::PerNotePressure { interpolation, .. } => Some(interpolation),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(curves, vec![InterpolationMode::None, InterpolationMode::None]);
+}
+
+/// The lane-level default is **lane**-level. `ccs` and `params` have no
+/// equivalent and are not getting one — a fugue-level curve default is a third
+/// precedence level, which FUGUE-API.md §2.3 rejects. Pinned so that stays true.
+#[test]
+fn cc_and_param_lanes_have_no_lane_level_curve() {
+    let fugue: CompositeFugue = serde_json::from_str(
+        r#"{"ccs":{"74":[[0,0],[1,127,"exp"]]},"params":{"7":[[0,0.0],[1,1.0,"linear"]]}}"#,
+    )
+    .unwrap();
+    assert_eq!(fugue.ccs[&74][0].curve, InterpolationMode::None);
+    assert_eq!(fugue.ccs[&74][1].curve, InterpolationMode::Exp);
+    assert_eq!(fugue.params[&7][0].curve, InterpolationMode::None);
+    assert_eq!(fugue.params[&7][1].curve, InterpolationMode::Linear);
 }
 
 // --- the round trip ---------------------------------------------------------
 
-/// **Serialize → deserialize, over every superset field**: `tag`, `cancel`,
-/// `LoopMode::Times`, and both per-note events.
-///
-/// `pitch_bends` / `pressures` are absent here for a reason, and it is not
-/// laziness — see the test below.
+/// **Serialize → deserialize, over every superset field** — `tag`, `cancel`,
+/// `LoopMode::Times`, both per-note events, and both per-note lanes — alongside
+/// the fields that were always there, so the whole type round trips.
 #[test]
 fn every_superset_field_round_trips() {
+    let mut ccs = HashMap::new();
+    ccs.insert(74u8, vec![serde_json::from_str("[0, 30, \"linear\"]").unwrap()]);
+    let mut params = HashMap::new();
+    params.insert(7u32, vec![serde_json::from_str("[1, 0.5]").unwrap()]);
+
     let fugue = CompositeFugue {
         tag: Some("melody".into()),
         cancel: Some(CancelTarget::Tag("bass".into())),
         loop_mode: LoopMode::Times(4),
         duration_beats: Some(8.0),
+        notes: vec![serde_json::from_str("[0, \"C3\", 2.0, 100, 1]").unwrap()],
+        ccs,
+        params,
+        pitch_bends: vec![PerNoteLane {
+            note: 60,
+            channel: 1,
+            interpolation: InterpolationMode::Linear,
+            points: vec![
+                PerNotePoint { beat: 0.0, value: 0.0, curve: None },
+                PerNotePoint { beat: 1.0, value: -2.0, curve: Some(InterpolationMode::Exp) },
+            ],
+        }],
+        pressures: vec![PerNoteLane {
+            note: 64,
+            points: vec![PerNotePoint { beat: 0.5, value: 0.75, curve: None }],
+            ..Default::default()
+        }],
         raw_events: vec![
             TimedFugueEvent {
                 beat_offset: 0.0,
@@ -222,41 +294,68 @@ fn every_superset_field_round_trips() {
                 },
             },
         ],
-        ..Default::default()
+        // No `..Default::default()`: every field is named above, and clippy
+        // enforces that it stays that way. A field added to `CompositeFugue`
+        // therefore breaks this test until it is round-tripped too.
     };
 
     let json = serde_json::to_string(&fugue).unwrap();
     let back: CompositeFugue = serde_json::from_str(&json).unwrap();
     assert_eq!(back, fugue);
 
-    for key in ["tag", "cancel"] {
+    for key in ["tag", "cancel", "pitch_bends", "pressures"] {
         assert!(json.contains(key), "{key} missing from {json}");
     }
 }
 
-/// **The per-note lanes cannot round trip, and the cause is inherited.**
-///
-/// `PerNoteLane.points` is `Vec<ParamPointItem>` — reuse, because a per-note
-/// point is a param point in every respect but what the number means. It
-/// therefore inherits `ParamPointItem`'s deserializer, whose `#[serde(untagged)]`
-/// helper puts `Array(serde_json::Value)` first and so swallows the object form
-/// that `Serialize` emits. `wire_compat.rs` documents the defect in full.
-///
-/// Parsing — the direction the wire contract is about — is unaffected: every
-/// test above feeds the array form and passes. **Delete this test with the fix.**
+/// A point that inherited its curve keeps *inheriting* it across a round trip —
+/// the absence is preserved on the wire rather than being baked into the point.
+/// Otherwise a fugue would quietly change meaning every time it was re-saved.
 #[test]
-fn known_defect_per_note_lanes_do_not_round_trip() {
+fn an_inherited_curve_survives_a_round_trip_as_an_absence() {
     let fugue = CompositeFugue {
         pitch_bends: vec![PerNoteLane {
             note: 60,
-            points: vec![serde_json::from_str("[0.0, 1.0]").unwrap()],
+            interpolation: InterpolationMode::Exp,
+            points: vec![PerNotePoint { beat: 0.0, value: 1.0, curve: None }],
             ..Default::default()
         }],
         ..Default::default()
     };
+
     let json = serde_json::to_string(&fugue).unwrap();
-    assert!(
-        serde_json::from_str::<CompositeFugue>(&json).is_err(),
-        "lanes round trip now — good; delete this test and its issue row"
+    assert!(!json.contains("curve"), "an absent curve must not be written: {json}");
+
+    let back: CompositeFugue = serde_json::from_str(&json).unwrap();
+    assert_eq!(back, fugue);
+    assert_eq!(back.pitch_bends[0].points[0].curve, None);
+
+    // …and it still resolves to the lane's curve after the trip.
+    let curves: Vec<_> = back
+        .compile()
+        .events
+        .iter()
+        .filter_map(|e| match e.event {
+            FugueEvent::PerNotePitchBend { interpolation, .. } => Some(interpolation),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(curves, vec![InterpolationMode::Exp]);
+}
+
+/// Both point forms are accepted for a per-note lane, and they mean the same
+/// thing — including the object form, which is what `Serialize` emits.
+#[test]
+fn per_note_points_accept_both_the_array_and_object_forms() {
+    let array: CompositeFugue =
+        serde_json::from_str(r#"{"pressures":[{"note":60,"points":[[1.5,0.25,"exp"]]}]}"#).unwrap();
+    let object: CompositeFugue = serde_json::from_str(
+        r#"{"pressures":[{"note":60,"points":[{"beat":1.5,"value":0.25,"curve":"exp"}]}]}"#,
+    )
+    .unwrap();
+    assert_eq!(array, object);
+    assert_eq!(
+        array.pressures[0].points[0],
+        PerNotePoint { beat: 1.5, value: 0.25, curve: Some(InterpolationMode::Exp) }
     );
 }

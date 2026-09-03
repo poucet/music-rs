@@ -35,7 +35,10 @@ impl<'de> Deserialize<'de> for NoteItem {
         #[derive(Deserialize)]
         #[serde(untagged)]
         enum NoteItemHelper {
-            Array(serde_json::Value),
+            // `Vec<Value>` and not `Value`: a bare `Value` matches a JSON object
+            // too, so this arm used to swallow the object form below and then
+            // fail inside it. Typed this way the two arms are disjoint by shape.
+            Array(Vec<serde_json::Value>),
             Object {
                 beat: f64,
                 #[serde(deserialize_with = "deserialize_note_pitch")]
@@ -67,10 +70,7 @@ impl<'de> Deserialize<'de> for NoteItem {
                 velocity,
                 channel,
             }),
-            NoteItemHelper::Array(val) => {
-                let arr = val.as_array().ok_or_else(|| {
-                    serde::de::Error::custom("expected note array [beat, note, dur, vel?, ch?]")
-                })?;
+            NoteItemHelper::Array(arr) => {
                 if arr.len() < 2 {
                     return Err(serde::de::Error::custom(
                         "note array must have at least 2 elements: [beat, note]",
@@ -126,6 +126,38 @@ impl<'de> Deserialize<'de> for NoteItem {
     }
 }
 
+/// The `[beat, value, curve?]` array form, which every automation point shares.
+///
+/// Only how `value` is read differs between the point kinds, so that is the
+/// parameter; `beat` and the optional trailing curve are parsed identically
+/// everywhere. An unrecognised curve falls back to the default rather than
+/// failing the point — long-standing behaviour, kept.
+///
+/// The returned curve is `None` when the third element is **absent**, which is
+/// what lets a per-note lane supply its own default for exactly those points.
+fn parse_point_array<V, E>(
+    arr: &[serde_json::Value],
+    what: &str,
+    value_expected: &str,
+    read_value: impl FnOnce(&serde_json::Value) -> Option<V>,
+) -> Result<(f64, V, Option<InterpolationMode>), E>
+where
+    E: serde::de::Error,
+{
+    if arr.len() < 2 {
+        return Err(E::custom(format!("{what} array must have at least [beat, value]")));
+    }
+    let beat = arr[0]
+        .as_f64()
+        .ok_or_else(|| E::custom("beat must be a number"))?;
+    let value = read_value(&arr[1])
+        .ok_or_else(|| E::custom(format!("value must be {value_expected}")))?;
+    let curve = arr
+        .get(2)
+        .map(|c| serde_json::from_value(c.clone()).unwrap_or_default());
+    Ok((beat, value, curve))
+}
+
 /// A Control Change automation point: `[beat, value, curve?]` or object `{ beat, value, curve }`.
 #[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
 pub struct CcPointItem {
@@ -143,7 +175,10 @@ impl<'de> Deserialize<'de> for CcPointItem {
         #[derive(Deserialize)]
         #[serde(untagged)]
         enum CcPointHelper {
-            Array(serde_json::Value),
+            // `Vec<Value>` and not `Value`: a bare `Value` matches a JSON object
+            // too, so this arm used to swallow the object form below and then
+            // fail inside it. Typed this way the two arms are disjoint by shape.
+            Array(Vec<serde_json::Value>),
             Object {
                 beat: f64,
                 value: u8,
@@ -154,30 +189,11 @@ impl<'de> Deserialize<'de> for CcPointItem {
 
         match CcPointHelper::deserialize(deserializer)? {
             CcPointHelper::Object { beat, value, curve } => Ok(CcPointItem { beat, value, curve }),
-            CcPointHelper::Array(val) => {
-                let arr = val.as_array().ok_or_else(|| {
-                    serde::de::Error::custom("expected CC point array [beat, value, curve?]")
+            CcPointHelper::Array(arr) => {
+                let (beat, value, curve) = parse_point_array(&arr, "CC point", "0..127", |v| {
+                    v.as_u64().map(|n| n as u8)
                 })?;
-                if arr.len() < 2 {
-                    return Err(serde::de::Error::custom(
-                        "CC point array must have at least [beat, value]",
-                    ));
-                }
-
-                let beat = arr[0]
-                    .as_f64()
-                    .ok_or_else(|| serde::de::Error::custom("beat must be a number"))?;
-                let value = arr[1]
-                    .as_u64()
-                    .ok_or_else(|| serde::de::Error::custom("value must be 0..127"))?
-                    as u8;
-                let curve = if arr.len() >= 3 {
-                    serde_json::from_value(arr[2].clone()).unwrap_or_default()
-                } else {
-                    InterpolationMode::None
-                };
-
-                Ok(CcPointItem { beat, value, curve })
+                Ok(CcPointItem { beat, value, curve: curve.unwrap_or_default() })
             }
         }
     }
@@ -200,7 +216,7 @@ impl<'de> Deserialize<'de> for ParamPointItem {
         #[derive(Deserialize)]
         #[serde(untagged)]
         enum ParamPointHelper {
-            Array(serde_json::Value),
+            Array(Vec<serde_json::Value>),
             Object {
                 beat: f64,
                 value: f32,
@@ -213,30 +229,61 @@ impl<'de> Deserialize<'de> for ParamPointItem {
             ParamPointHelper::Object { beat, value, curve } => {
                 Ok(ParamPointItem { beat, value, curve })
             }
-            ParamPointHelper::Array(val) => {
-                let arr = val.as_array().ok_or_else(|| {
-                    serde::de::Error::custom("expected param point array [beat, value, curve?]")
-                })?;
-                if arr.len() < 2 {
-                    return Err(serde::de::Error::custom(
-                        "param point array must have at least [beat, value]",
-                    ));
-                }
+            ParamPointHelper::Array(arr) => {
+                let (beat, value, curve) =
+                    parse_point_array(&arr, "param point", "a number", |v| {
+                        v.as_f64().map(|n| n as f32)
+                    })?;
+                Ok(ParamPointItem { beat, value, curve: curve.unwrap_or_default() })
+            }
+        }
+    }
+}
 
-                let beat = arr[0]
-                    .as_f64()
-                    .ok_or_else(|| serde::de::Error::custom("beat must be a number"))?;
-                let value = arr[1]
-                    .as_f64()
-                    .ok_or_else(|| serde::de::Error::custom("value must be a number"))?
-                    as f32;
-                let curve = if arr.len() >= 3 {
-                    serde_json::from_value(arr[2].clone()).unwrap_or_default()
-                } else {
-                    InterpolationMode::None
-                };
+/// A per-note expression point: `[beat, value, curve?]` or object
+/// `{ beat, value, curve }`.
+///
+/// The one thing that separates it from [`ParamPointItem`] is that its curve is
+/// **optional rather than defaulted**, so a point that says nothing about its
+/// curve is distinguishable from one that says `"none"`. That distinction is
+/// the whole point: an absent curve inherits [`PerNoteLane::interpolation`],
+/// which is Droplets' semantics for the shape this was taken from.
+#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema, Default)]
+pub struct PerNotePoint {
+    pub beat: f64,
+    pub value: f32,
+    /// Absent means "use the lane's `interpolation`".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub curve: Option<InterpolationMode>,
+}
 
-                Ok(ParamPointItem { beat, value, curve })
+impl<'de> Deserialize<'de> for PerNotePoint {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum PerNotePointHelper {
+            Array(Vec<serde_json::Value>),
+            Object {
+                beat: f64,
+                value: f32,
+                #[serde(default)]
+                curve: Option<InterpolationMode>,
+            },
+        }
+
+        match PerNotePointHelper::deserialize(deserializer)? {
+            PerNotePointHelper::Object { beat, value, curve } => {
+                Ok(PerNotePoint { beat, value, curve })
+            }
+            PerNotePointHelper::Array(arr) => {
+                let (beat, value, curve) =
+                    parse_point_array(&arr, "per-note point", "a number", |v| {
+                        v.as_f64().map(|n| n as f32)
+                    })?;
+                Ok(PerNotePoint { beat, value, curve })
             }
         }
     }
@@ -255,13 +302,15 @@ pub struct PerNoteLane {
     pub note: u8,
     #[serde(default)]
     pub channel: u8,
-    /// `[beat, value, curve?]` points, in the same form as a param lane.
+    /// `[beat, value, curve?]` points. A point that omits its curve takes the
+    /// lane's `interpolation` below.
     #[serde(default)]
-    pub points: Vec<ParamPointItem>,
-    /// The lane's own curve. Carried in the wire format for a host that wants a
-    /// lane-wide default; [`CompositeFugue::compile`] does **not** fold it into
-    /// the points, which each carry their own `curve`. Adding a second
-    /// precedence level to curve resolution is a decision nobody has taken.
+    pub points: Vec<PerNotePoint>,
+    /// The lane's curve, used for every point that does not name one of its own.
+    ///
+    /// This is lane-level only, and deliberately so: a *fugue*-level curve
+    /// default is a third precedence level and is rejected (FUGUE-API.md §2.3).
+    /// `ccs` and `params` have no equivalent and are not getting one.
     #[serde(default)]
     pub interpolation: InterpolationMode,
 }
@@ -336,9 +385,12 @@ fn push_per_note_lane(
 ) {
     for lane in lanes {
         for pt in &lane.points {
+            // The point's own curve wins; a point that names none takes the
+            // lane's. Two levels, no more.
+            let curve = pt.curve.unwrap_or(lane.interpolation);
             events.push(TimedFugueEvent {
                 beat_offset: pt.beat,
-                event: make(lane.channel, lane.note, pt.value, pt.curve),
+                event: make(lane.channel, lane.note, pt.value, curve),
             });
             if pt.beat > *max_beat {
                 *max_beat = pt.beat;

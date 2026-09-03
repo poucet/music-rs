@@ -156,31 +156,74 @@ fn defaults_are_unchanged() {
     assert_eq!(StartMode::default(), StartMode::Immediate);
 }
 
-/// **A defect this crate arrived with, pinned rather than fixed.**
+/// **The crate re-parses its own serialized output.**
 ///
-/// `NoteItem` / `CcPointItem` / `ParamPointItem` each deserialize through an
-/// `#[serde(untagged)]` helper whose *first* arm is `Array(serde_json::Value)`.
-/// A `serde_json::Value` matches anything, objects included, so the object form
-/// — which the doc comments on those types and `AI_SAMPLER_MCP.md` both
-/// advertise — never reaches its own arm and fails inside the array branch.
+/// It did not until 2026-09-03. `NoteItem` / `CcPointItem` / `ParamPointItem`
+/// each deserialize through an `#[serde(untagged)]` helper whose array arm was
+/// typed `serde_json::Value` — which matches a JSON *object* too, so the object
+/// form that `Serialize` emits was swallowed by the array arm and then failed
+/// inside it. Typing those arms `Vec<serde_json::Value>` makes the two arms
+/// disjoint by shape. Every fixture above still parses to the same value, which
+/// is the proof that nothing already accepted changed meaning.
 ///
-/// The consequence is larger than the documented form being dead: `Serialize`
-/// is derived, and it *emits* the object form, so **the crate does not re-parse
-/// its own output** whenever `notes`, `ccs` or `params` is non-empty.
-///
-/// Fixing it is a behaviour change (JSON that errors today would start parsing)
-/// and is not this lane's to make. This test states today's truth so the defect
-/// cannot be forgotten; **delete it in the change that fixes it.**
+/// This is the property every host relies on the moment it saves a fugue it
+/// built in Rust and reads it back.
 #[test]
-fn known_defect_object_form_and_self_round_trip_are_broken() {
-    let with_notes = r#"{"notes":[[0,"C3",1.0,100]]}"#;
-    let fugue: CompositeFugue = serde_json::from_str(with_notes).unwrap();
-    let emitted = serde_json::to_string(&fugue).unwrap();
-    assert!(emitted.contains(r#"{"beat":0.0,"note":60,"#), "emitted: {emitted}");
+fn a_fugue_survives_its_own_serialization() {
+    for name in fixture_names() {
+        let input = fs::read_to_string(fixtures_dir().join(format!("{name}.json"))).unwrap();
+        let fugue: CompositeFugue = serde_json::from_str(&input).unwrap();
+        let emitted = serde_json::to_string(&fugue).unwrap();
+        let back: CompositeFugue = serde_json::from_str(&emitted)
+            .unwrap_or_else(|e| panic!("{name}: cannot re-parse its own output: {e}\n{emitted}"));
+        assert_eq!(back, fugue, "{name}: round trip changed the value");
+    }
+}
 
-    let reparsed = serde_json::from_str::<CompositeFugue>(&emitted);
-    assert!(
-        reparsed.is_err(),
-        "the object form now parses — good; delete this test and its issue row"
-    );
+/// The object form the type doc comments and nexus's `AI_SAMPLER_MCP.md:43`
+/// advertise — dead until 2026-09-03 — parses, and means the same as the array
+/// form it sits beside.
+#[test]
+fn the_documented_object_form_parses_and_agrees_with_the_array_form() {
+    let array: CompositeFugue = serde_json::from_str(
+        r#"{"notes":[[0,"C3",1.0,100,0]],"ccs":{"74":[[0,30,"linear"]]},
+            "params":{"7":[[0,0.5,"exp"]]}}"#,
+    )
+    .unwrap();
+    let object: CompositeFugue = serde_json::from_str(
+        r#"{"notes":[{"beat":0.0,"note":"C3","duration":1.0,"velocity":100,"channel":0}],
+            "ccs":{"74":[{"beat":0.0,"value":30,"curve":"linear"}]},
+            "params":{"7":[{"beat":0.0,"value":0.5,"curve":"exp"}]}}"#,
+    )
+    .unwrap();
+    assert_eq!(array, object);
+
+    // The object form's own defaults still apply: duration 1.0, velocity 100.
+    let sparse: CompositeFugue =
+        serde_json::from_str(r#"{"notes":[{"beat":2.0,"note":64}]}"#).unwrap();
+    assert_eq!(sparse.notes[0].duration, 1.0);
+    assert_eq!(sparse.notes[0].velocity, 100);
+    assert_eq!(sparse.notes[0].channel, 0);
+}
+
+/// Fixing the arm order must not have widened what an array is allowed to be.
+/// These were rejected before and are rejected now.
+#[test]
+fn malformed_points_are_still_rejected() {
+    for bad in [
+        r#"{"notes":[[0]]}"#,                  // too short
+        r#"{"notes":[["nope","C3"]]}"#,        // beat not a number
+        r#"{"notes":[[0,{"a":1}]]}"#,          // note neither number nor name
+        r#"{"notes":[[0,"H9"]]}"#,             // not a note name
+        r#"{"notes":[[0,200]]}"#,              // out of MIDI range
+        r#"{"ccs":{"74":[[0]]}}"#,             // CC point too short
+        r#"{"ccs":{"74":[["x",1]]}}"#,         // CC beat not a number
+        r#"{"params":{"7":[[0,"x"]]}}"#,       // param value not a number
+        r#"{"pitch_bends":[{"note":60,"points":[[0]]}]}"#, // per-note point too short
+    ] {
+        assert!(
+            serde_json::from_str::<CompositeFugue>(bad).is_err(),
+            "should have been rejected: {bad}"
+        );
+    }
 }

@@ -27,7 +27,7 @@ pub mod render;
 pub mod types;
 
 pub use composite::{
-    CcPointItem, CompiledFugue, CompositeFugue, NoteItem, ParamPointItem, PerNoteLane,
+    CcPointItem, CompiledFugue, CompositeFugue, NoteItem, ParamPointItem, PerNoteLane, PerNotePoint,
 };
 pub use note::{deserialize_note_pitch, format_note_name, parse_note_name};
 pub use render::{RenderAudioRequest, RenderAudioResponse, default_instance};
