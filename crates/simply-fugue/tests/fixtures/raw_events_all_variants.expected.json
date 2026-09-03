@@ -1,0 +1,100 @@
+{
+  "ccs": {},
+  "duration_beats": 4.0,
+  "loop_mode": "once",
+  "notes": [],
+  "params": {},
+  "raw_events": [
+    {
+      "beat_offset": 0.0,
+      "event": {
+        "channel": 0,
+        "note": 60,
+        "type": "note_on",
+        "velocity": 100
+      }
+    },
+    {
+      "beat_offset": 1.0,
+      "event": {
+        "channel": 0,
+        "note": 60,
+        "type": "note_off",
+        "velocity": 64
+      }
+    },
+    {
+      "beat_offset": 1.0,
+      "event": {
+        "channel": 1,
+        "duration_beats": 2.0,
+        "note": 67,
+        "type": "timed_note",
+        "velocity": 90
+      }
+    },
+    {
+      "beat_offset": 1.5,
+      "event": {
+        "channel": 0,
+        "controller": 74,
+        "interpolation": "none",
+        "type": "cc",
+        "value": 30
+      }
+    },
+    {
+      "beat_offset": 1.75,
+      "event": {
+        "channel": 2,
+        "controller": 1,
+        "interpolation": "linear",
+        "type": "cc",
+        "value": 127
+      }
+    },
+    {
+      "beat_offset": 2.0,
+      "event": {
+        "id": 12,
+        "interpolation": "none",
+        "type": "param",
+        "value": 0.25
+      }
+    },
+    {
+      "beat_offset": 2.25,
+      "event": {
+        "id": 13,
+        "interpolation": "exp",
+        "type": "param",
+        "value": 0.75
+      }
+    },
+    {
+      "beat_offset": 2.5,
+      "event": {
+        "channel": 0,
+        "type": "pitch_bend",
+        "value": -8192
+      }
+    },
+    {
+      "beat_offset": 2.75,
+      "event": {
+        "channel": 0,
+        "type": "pressure",
+        "value": 100
+      }
+    },
+    {
+      "beat_offset": 3.0,
+      "event": {
+        "channel": 0,
+        "note": 60,
+        "type": "poly_pressure",
+        "value": 55
+      }
+    }
+  ]
+}

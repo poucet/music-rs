@@ -39,11 +39,13 @@ pub fn parse_note_name(name: &str) -> Result<u8, String> {
                 chars.next();
             }
             'b' | 'B' => {
-                // If it's a flat accidental (before any digits)
-                if chars.clone().nth(1).map_or(false, |next| next.is_ascii_digit() || next == '-') {
-                    accidental -= 1;
-                    chars.next();
-                } else if accidental == 0 {
+                // A 'b' is a flat when the octave follows it, or when no
+                // accidental has been read yet; otherwise it ends the run.
+                let octave_follows = chars
+                    .clone()
+                    .nth(1)
+                    .is_some_and(|next| next.is_ascii_digit() || next == '-');
+                if octave_follows || accidental == 0 {
                     accidental -= 1;
                     chars.next();
                 } else {

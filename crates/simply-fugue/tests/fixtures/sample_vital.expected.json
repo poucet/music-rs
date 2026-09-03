@@ -1,0 +1,51 @@
+{
+  "ccs": {},
+  "duration_beats": 10.0,
+  "loop_mode": "once",
+  "notes": [
+    {
+      "beat": 0.0,
+      "channel": 0,
+      "duration": 2.0,
+      "note": 48,
+      "velocity": 110
+    },
+    {
+      "beat": 1.0,
+      "channel": 0,
+      "duration": 2.0,
+      "note": 55,
+      "velocity": 100
+    },
+    {
+      "beat": 2.0,
+      "channel": 0,
+      "duration": 2.0,
+      "note": 60,
+      "velocity": 105
+    },
+    {
+      "beat": 3.0,
+      "channel": 0,
+      "duration": 2.0,
+      "note": 63,
+      "velocity": 100
+    },
+    {
+      "beat": 4.0,
+      "channel": 0,
+      "duration": 3.5,
+      "note": 67,
+      "velocity": 115
+    },
+    {
+      "beat": 6.0,
+      "channel": 0,
+      "duration": 3.5,
+      "note": 72,
+      "velocity": 120
+    }
+  ],
+  "params": {},
+  "raw_events": []
+}

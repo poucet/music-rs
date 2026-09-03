@@ -242,10 +242,34 @@ impl<'de> Deserialize<'de> for ParamPointItem {
     }
 }
 
+/// One note's worth of per-note expression: a lane of `[beat, value, curve?]`
+/// points aimed at a single `(channel, note)`.
+///
+/// The same shape carries pitch bend (points are semitones) and pressure
+/// (points are 0.0..=1.0) — the two differ only in what the value means, so
+/// they share one type. `note` accepts a MIDI number or a name (`"C3"`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, Default)]
+pub struct PerNoteLane {
+    /// The note this lane bends or presses. `60` or `"C3"`.
+    #[serde(deserialize_with = "deserialize_note_pitch")]
+    pub note: u8,
+    #[serde(default)]
+    pub channel: u8,
+    /// `[beat, value, curve?]` points, in the same form as a param lane.
+    #[serde(default)]
+    pub points: Vec<ParamPointItem>,
+    /// The lane's own curve. Carried in the wire format for a host that wants a
+    /// lane-wide default; [`CompositeFugue::compile`] does **not** fold it into
+    /// the points, which each carry their own `curve`. Adding a second
+    /// precedence level to curve resolution is a decision nobody has taken.
+    #[serde(default)]
+    pub interpolation: InterpolationMode,
+}
+
 /// High-level, developer-friendly Fugue definition.
 ///
 /// Can contain notes, CC automation tracks, parameter automation tracks,
-/// or raw Fugue event lists.
+/// per-note expression lanes, or raw Fugue event lists.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, Default)]
 pub struct CompositeFugue {
     /// List of notes (either compact `[beat, "C3", dur, vel]` or full objects).
@@ -270,6 +294,25 @@ pub struct CompositeFugue {
 
     #[serde(default)]
     pub loop_mode: LoopMode,
+
+    // --- added by the superset ----------------------------------------------
+    // Every one is defaulted and skipped when unused, so a fugue that predates
+    // them parses to the same value and serializes to the same bytes.
+    /// Grouping / cancellation label.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
+
+    /// What this fugue cancels when it starts — the axis [`CancelMode`] is not.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cancel: Option<CancelTarget>,
+
+    /// Per-note pitch-bend lanes, one per target note. Values are semitones.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pitch_bends: Vec<PerNoteLane>,
+
+    /// Per-note pressure lanes, one per target note. Values are 0.0..=1.0.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pressures: Vec<PerNoteLane>,
 }
 
 /// Compiled performance sequence ready for offline rendering or transport playback.
@@ -278,6 +321,30 @@ pub struct CompiledFugue {
     pub duration_beats: f64,
     pub events: Vec<TimedFugueEvent>,
     pub loop_mode: LoopMode,
+}
+
+/// Emit one timed event per point across a set of per-note lanes, growing
+/// `max_beat` to cover them.
+///
+/// Pitch bend and pressure differ only in which [`FugueEvent`] a point becomes,
+/// so they share this loop; `make` is the only thing that varies.
+fn push_per_note_lane(
+    events: &mut Vec<TimedFugueEvent>,
+    max_beat: &mut f64,
+    lanes: &[PerNoteLane],
+    make: fn(u8, u8, f32, InterpolationMode) -> FugueEvent,
+) {
+    for lane in lanes {
+        for pt in &lane.points {
+            events.push(TimedFugueEvent {
+                beat_offset: pt.beat,
+                event: make(lane.channel, lane.note, pt.value, pt.curve),
+            });
+            if pt.beat > *max_beat {
+                *max_beat = pt.beat;
+            }
+        }
+    }
 }
 
 impl CompositeFugue {
@@ -334,6 +401,16 @@ impl CompositeFugue {
                 }
             }
         }
+
+        // Per-note expression: one event per point, sparse. Nothing renders
+        // these yet on either host; a renderer that does interpolates between
+        // consecutive points itself, exactly as it does for a param lane.
+        push_per_note_lane(&mut events, &mut max_beat, &self.pitch_bends, |channel, note, value, interpolation| {
+            FugueEvent::PerNotePitchBend { channel, note, semitones: value, interpolation }
+        });
+        push_per_note_lane(&mut events, &mut max_beat, &self.pressures, |channel, note, value, interpolation| {
+            FugueEvent::PerNotePressure { channel, note, pressure: value, interpolation }
+        });
 
         // Sort events chronologically
         events.sort_by(|a, b| {

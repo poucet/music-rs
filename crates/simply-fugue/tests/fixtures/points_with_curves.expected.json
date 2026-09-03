@@ -1,0 +1,29 @@
+{
+  "ccs": {
+    "74": [
+      {
+        "beat": 0.0,
+        "curve": "linear",
+        "value": 30
+      },
+      {
+        "beat": 1.0,
+        "curve": "exp",
+        "value": 120
+      }
+    ]
+  },
+  "duration_beats": null,
+  "loop_mode": "once",
+  "notes": [
+    {
+      "beat": 0.0,
+      "channel": 0,
+      "duration": 2.0,
+      "note": 60,
+      "velocity": 100
+    }
+  ],
+  "params": {},
+  "raw_events": []
+}

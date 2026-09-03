@@ -15,3 +15,7 @@ Legend: 🚧 in flight · ✅ landed · ⏸ deferred.
 ## Deferred by decision
 
 ## Landed index
+
+| Landed | Lane | What |
+|---|---|---|
+| 2026-09-03 | `FUGUECRATE` | `simply-fugue` extracted from nexus into this repo and widened into the shared superset; `RenderAudioRequest`/`Response` moved in; 12-fixture wire-compat gate |

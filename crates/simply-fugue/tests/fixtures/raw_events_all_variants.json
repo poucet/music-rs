@@ -1,0 +1,15 @@
+{
+    "raw_events": [
+        { "beat_offset": 0.0, "event": { "type": "note_on", "channel": 0, "note": 60, "velocity": 100 } },
+        { "beat_offset": 1.0, "event": { "type": "note_off", "channel": 0, "note": 60, "velocity": 64 } },
+        { "beat_offset": 1.0, "event": { "type": "timed_note", "channel": 1, "note": 67, "velocity": 90, "duration_beats": 2.0 } },
+        { "beat_offset": 1.5, "event": { "type": "cc", "channel": 0, "controller": 74, "value": 30 } },
+        { "beat_offset": 1.75, "event": { "type": "cc", "channel": 2, "controller": 1, "value": 127, "interpolation": "linear" } },
+        { "beat_offset": 2.0, "event": { "type": "param", "id": 12, "value": 0.25 } },
+        { "beat_offset": 2.25, "event": { "type": "param", "id": 13, "value": 0.75, "interpolation": "exp" } },
+        { "beat_offset": 2.5, "event": { "type": "pitch_bend", "channel": 0, "value": -8192 } },
+        { "beat_offset": 2.75, "event": { "type": "pressure", "channel": 0, "value": 100 } },
+        { "beat_offset": 3.0, "event": { "type": "poly_pressure", "channel": 0, "note": 60, "value": 55 } }
+    ],
+    "duration_beats": 4.0
+}

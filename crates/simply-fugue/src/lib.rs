@@ -1,15 +1,39 @@
-//! `simply-fugue`: Canonical Fugue musical definition, compact note parsing,
-//! and performance scheduling across the Simply ecosystem (Flux, Nexus, Droplets).
+//! `simply-fugue`: the Fugue musical definition, compact note parsing, and the
+//! `render_audio` tool contract — **shared by Nexus and Flux**, which take the
+//! same fugue JSON under the same tool name (Chris, 2026-09-03).
+//!
+//! **Droplets keeps its own fugue model** and is deliberately not a consumer.
+//! It shares the vocabulary and almost none of the types: every mode enum has a
+//! disjoint variant set, `CancelMode` and `StartMode` are not even about the
+//! same subject on the two sides, and its `FugueDefinition` is flat where this
+//! one nests. Converging it would flip three defaults under a live sequencer.
+//! See `music`'s `docs/ops/DECISIONS.md`.
+//!
+//! What this model does carry from Droplets, because it was free: `Times(n)`
+//! and `Bars(n)`, the `"forever"` / `"immediate"` / `"cc"` spellings as
+//! aliases, per-note pitch bend and pressure, `tag`, and a cancel *target*.
+//! Nothing that existed before changed spelling, default, or meaning.
+//!
+//! ## What is carried but not rendered
+//!
+//! Neither host renders per-note expression today, and nexus's offline renderer
+//! also drops `PitchBend` / `Pressure` / `PolyPressure`. These variants are in
+//! the wire format so a fugue written for one host parses on the other; a tool
+//! description must not promise they sound.
 
 pub mod composite;
 pub mod note;
+pub mod render;
 pub mod types;
 
-pub use composite::{CcPointItem, CompiledFugue, CompositeFugue, NoteItem, ParamPointItem};
-pub use note::{format_note_name, parse_note_name};
+pub use composite::{
+    CcPointItem, CompiledFugue, CompositeFugue, NoteItem, ParamPointItem, PerNoteLane,
+};
+pub use note::{deserialize_note_pitch, format_note_name, parse_note_name};
+pub use render::{RenderAudioRequest, RenderAudioResponse, default_instance};
 pub use types::{
-    CancelMode, FugueDefinition, FugueEvent, FugueHeader, InterpolationMode, LoopMode,
-    QuantizeMode, StartMode, TimedFugueEvent,
+    CancelMode, CancelTarget, FugueDefinition, FugueEvent, FugueHeader, InterpolationMode,
+    LoopMode, QuantizeMode, StartMode, TimedFugueEvent,
 };
 
 #[cfg(test)]

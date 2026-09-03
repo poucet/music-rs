@@ -1,0 +1,59 @@
+{
+  "ccs": {
+    "1": [
+      {
+        "beat": 0.0,
+        "curve": "none",
+        "value": 0
+      },
+      {
+        "beat": 2.0,
+        "curve": "linear",
+        "value": 64
+      },
+      {
+        "beat": 4.0,
+        "curve": "none",
+        "value": 127
+      }
+    ],
+    "74": [
+      {
+        "beat": 0.0,
+        "curve": "exp",
+        "value": 20
+      },
+      {
+        "beat": 4.0,
+        "curve": "log",
+        "value": 110
+      }
+    ]
+  },
+  "duration_beats": 4.0,
+  "loop_mode": "once",
+  "notes": [
+    {
+      "beat": 0.0,
+      "channel": 0,
+      "duration": 4.0,
+      "note": 60,
+      "velocity": 100
+    }
+  ],
+  "params": {
+    "7": [
+      {
+        "beat": 0.0,
+        "curve": "none",
+        "value": 0.0
+      },
+      {
+        "beat": 1.0,
+        "curve": "linear",
+        "value": 1.0
+      }
+    ]
+  },
+  "raw_events": []
+}

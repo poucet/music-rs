@@ -1,0 +1,16 @@
+{
+  "ccs": {},
+  "duration_beats": null,
+  "loop_mode": "once",
+  "notes": [
+    {
+      "beat": 0.0,
+      "channel": 0,
+      "duration": 1.0,
+      "note": 60,
+      "velocity": 100
+    }
+  ],
+  "params": {},
+  "raw_events": []
+}

@@ -1,0 +1,21 @@
+{
+  "ccs": {
+    "74": [
+      {
+        "beat": 0.0,
+        "curve": "linear",
+        "value": 30
+      },
+      {
+        "beat": 4.0,
+        "curve": "log",
+        "value": 120
+      }
+    ]
+  },
+  "duration_beats": 4.0,
+  "loop_mode": "once",
+  "notes": [],
+  "params": {},
+  "raw_events": []
+}
