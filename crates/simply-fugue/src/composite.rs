@@ -1,0 +1,351 @@
+//! High-level Composite Fugue structure and compilation engine.
+
+use std::collections::HashMap;
+
+use schemars::JsonSchema;
+use serde::{Deserialize, Deserializer, Serialize};
+
+use crate::note::{deserialize_note_pitch, parse_note_name};
+use crate::types::*;
+
+/// A compact note specification that can be written either as an array:
+/// `[beat, note, duration_beats, velocity?, channel?]`
+/// or as an object:
+/// `{ beat: 0.0, note: "C3", duration: 1.0, velocity: 100, channel: 0 }`
+#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
+pub struct NoteItem {
+    pub beat: f64,
+    pub note: u8,
+    pub duration: f64,
+    #[serde(default = "default_velocity")]
+    pub velocity: u8,
+    #[serde(default)]
+    pub channel: u8,
+}
+
+fn default_velocity() -> u8 {
+    100
+}
+
+impl<'de> Deserialize<'de> for NoteItem {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum NoteItemHelper {
+            Array(serde_json::Value),
+            Object {
+                beat: f64,
+                #[serde(deserialize_with = "deserialize_note_pitch")]
+                note: u8,
+                #[serde(default = "default_duration")]
+                duration: f64,
+                #[serde(default = "default_velocity")]
+                velocity: u8,
+                #[serde(default)]
+                channel: u8,
+            },
+        }
+
+        fn default_duration() -> f64 {
+            1.0
+        }
+
+        match NoteItemHelper::deserialize(deserializer)? {
+            NoteItemHelper::Object {
+                beat,
+                note,
+                duration,
+                velocity,
+                channel,
+            } => Ok(NoteItem {
+                beat,
+                note,
+                duration,
+                velocity,
+                channel,
+            }),
+            NoteItemHelper::Array(val) => {
+                let arr = val.as_array().ok_or_else(|| {
+                    serde::de::Error::custom("expected note array [beat, note, dur, vel?, ch?]")
+                })?;
+                if arr.len() < 2 {
+                    return Err(serde::de::Error::custom(
+                        "note array must have at least 2 elements: [beat, note]",
+                    ));
+                }
+
+                let beat = arr[0]
+                    .as_f64()
+                    .ok_or_else(|| serde::de::Error::custom("beat must be a number"))?;
+
+                let note = match &arr[1] {
+                    serde_json::Value::Number(n) => n
+                        .as_u64()
+                        .and_then(|num| if num <= 127 { Some(num as u8) } else { None })
+                        .ok_or_else(|| serde::de::Error::custom("MIDI note must be 0..127"))?,
+                    serde_json::Value::String(s) => {
+                        parse_note_name(s).map_err(serde::de::Error::custom)?
+                    }
+                    _ => {
+                        return Err(serde::de::Error::custom(
+                            "note must be a MIDI integer or note string like 'C3'",
+                        ));
+                    }
+                };
+
+                let duration = if arr.len() >= 3 {
+                    arr[2].as_f64().unwrap_or(1.0)
+                } else {
+                    1.0
+                };
+
+                let velocity = if arr.len() >= 4 {
+                    arr[3].as_u64().unwrap_or(100) as u8
+                } else {
+                    100
+                };
+
+                let channel = if arr.len() >= 5 {
+                    arr[4].as_u64().unwrap_or(0) as u8
+                } else {
+                    0
+                };
+
+                Ok(NoteItem {
+                    beat,
+                    note,
+                    duration,
+                    velocity,
+                    channel,
+                })
+            }
+        }
+    }
+}
+
+/// A Control Change automation point: `[beat, value, curve?]` or object `{ beat, value, curve }`.
+#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
+pub struct CcPointItem {
+    pub beat: f64,
+    pub value: u8,
+    #[serde(default)]
+    pub curve: InterpolationMode,
+}
+
+impl<'de> Deserialize<'de> for CcPointItem {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum CcPointHelper {
+            Array(serde_json::Value),
+            Object {
+                beat: f64,
+                value: u8,
+                #[serde(default)]
+                curve: InterpolationMode,
+            },
+        }
+
+        match CcPointHelper::deserialize(deserializer)? {
+            CcPointHelper::Object { beat, value, curve } => Ok(CcPointItem { beat, value, curve }),
+            CcPointHelper::Array(val) => {
+                let arr = val.as_array().ok_or_else(|| {
+                    serde::de::Error::custom("expected CC point array [beat, value, curve?]")
+                })?;
+                if arr.len() < 2 {
+                    return Err(serde::de::Error::custom(
+                        "CC point array must have at least [beat, value]",
+                    ));
+                }
+
+                let beat = arr[0]
+                    .as_f64()
+                    .ok_or_else(|| serde::de::Error::custom("beat must be a number"))?;
+                let value = arr[1]
+                    .as_u64()
+                    .ok_or_else(|| serde::de::Error::custom("value must be 0..127"))?
+                    as u8;
+                let curve = if arr.len() >= 3 {
+                    serde_json::from_value(arr[2].clone()).unwrap_or_default()
+                } else {
+                    InterpolationMode::None
+                };
+
+                Ok(CcPointItem { beat, value, curve })
+            }
+        }
+    }
+}
+
+/// A Parameter automation point: `[beat, value, curve?]` or object `{ beat, value, curve }`.
+#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
+pub struct ParamPointItem {
+    pub beat: f64,
+    pub value: f32,
+    #[serde(default)]
+    pub curve: InterpolationMode,
+}
+
+impl<'de> Deserialize<'de> for ParamPointItem {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum ParamPointHelper {
+            Array(serde_json::Value),
+            Object {
+                beat: f64,
+                value: f32,
+                #[serde(default)]
+                curve: InterpolationMode,
+            },
+        }
+
+        match ParamPointHelper::deserialize(deserializer)? {
+            ParamPointHelper::Object { beat, value, curve } => {
+                Ok(ParamPointItem { beat, value, curve })
+            }
+            ParamPointHelper::Array(val) => {
+                let arr = val.as_array().ok_or_else(|| {
+                    serde::de::Error::custom("expected param point array [beat, value, curve?]")
+                })?;
+                if arr.len() < 2 {
+                    return Err(serde::de::Error::custom(
+                        "param point array must have at least [beat, value]",
+                    ));
+                }
+
+                let beat = arr[0]
+                    .as_f64()
+                    .ok_or_else(|| serde::de::Error::custom("beat must be a number"))?;
+                let value = arr[1]
+                    .as_f64()
+                    .ok_or_else(|| serde::de::Error::custom("value must be a number"))?
+                    as f32;
+                let curve = if arr.len() >= 3 {
+                    serde_json::from_value(arr[2].clone()).unwrap_or_default()
+                } else {
+                    InterpolationMode::None
+                };
+
+                Ok(ParamPointItem { beat, value, curve })
+            }
+        }
+    }
+}
+
+/// High-level, developer-friendly Fugue definition.
+///
+/// Can contain notes, CC automation tracks, parameter automation tracks,
+/// or raw Fugue event lists.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, Default)]
+pub struct CompositeFugue {
+    /// List of notes (either compact `[beat, "C3", dur, vel]` or full objects).
+    #[serde(default)]
+    pub notes: Vec<NoteItem>,
+
+    /// CC automation points keyed by CC number (0..=127).
+    #[serde(default)]
+    pub ccs: HashMap<u8, Vec<CcPointItem>>,
+
+    /// Parameter automation points keyed by parameter ID.
+    #[serde(default)]
+    pub params: HashMap<u32, Vec<ParamPointItem>>,
+
+    /// Raw timed events (if already compiled or explicitly scheduled).
+    #[serde(default)]
+    pub raw_events: Vec<TimedFugueEvent>,
+
+    /// Overall performance duration in beats (auto-calculated from notes if omitted).
+    #[serde(default)]
+    pub duration_beats: Option<f64>,
+
+    #[serde(default)]
+    pub loop_mode: LoopMode,
+}
+
+/// Compiled performance sequence ready for offline rendering or transport playback.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CompiledFugue {
+    pub duration_beats: f64,
+    pub events: Vec<TimedFugueEvent>,
+    pub loop_mode: LoopMode,
+}
+
+impl CompositeFugue {
+    /// Compile the high-level representation into a linear, sorted list of timed events.
+    pub fn compile(&self) -> CompiledFugue {
+        let mut events = self.raw_events.clone();
+        let mut max_beat = self.duration_beats.unwrap_or(0.0);
+
+        for n in &self.notes {
+            events.push(TimedFugueEvent {
+                beat_offset: n.beat,
+                event: FugueEvent::TimedNote {
+                    channel: n.channel,
+                    note: n.note,
+                    velocity: n.velocity,
+                    duration_beats: n.duration,
+                },
+            });
+            let end_beat = n.beat + n.duration;
+            if end_beat > max_beat {
+                max_beat = end_beat;
+            }
+        }
+
+        for (&controller, points) in &self.ccs {
+            for pt in points {
+                events.push(TimedFugueEvent {
+                    beat_offset: pt.beat,
+                    event: FugueEvent::Cc {
+                        channel: 0,
+                        controller,
+                        value: pt.value,
+                        interpolation: pt.curve,
+                    },
+                });
+                if pt.beat > max_beat {
+                    max_beat = pt.beat;
+                }
+            }
+        }
+
+        for (&id, points) in &self.params {
+            for pt in points {
+                events.push(TimedFugueEvent {
+                    beat_offset: pt.beat,
+                    event: FugueEvent::Param {
+                        id,
+                        value: pt.value,
+                        interpolation: pt.curve,
+                    },
+                });
+                if pt.beat > max_beat {
+                    max_beat = pt.beat;
+                }
+            }
+        }
+
+        // Sort events chronologically
+        events.sort_by(|a, b| {
+            a.beat_offset
+                .partial_cmp(&b.beat_offset)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        CompiledFugue {
+            duration_beats: max_beat.max(1.0),
+            events,
+            loop_mode: self.loop_mode,
+        }
+    }
+}

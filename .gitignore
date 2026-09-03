@@ -1,0 +1,16 @@
+.vscode/
+target/
+.claude/
+.pi/
+.workspaces/
+.screenshots/
+docs/scratch/
+
+# The shared working system lives in ~/projects/simply/dev and is symlinked in
+# so agents read it by an in-repo path. The link target is machine-specific, so
+# the link itself is not committed — see AGENTS.md for how to recreate it.
+/SYSTEM.md
+
+# Python bytecode from the repo scripts
+__pycache__/
+*.swp

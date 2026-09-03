@@ -1,0 +1,13 @@
+[package]
+name = "simply-fugue"
+description = "Canonical Fugue musical definition, compact note parsing, and performance scheduling across the Simply ecosystem."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+schemars.workspace = true
