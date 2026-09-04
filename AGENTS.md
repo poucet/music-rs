@@ -90,10 +90,11 @@ Three things that follow, so nobody rediscovers them:
 - **A stale-workspace sweep may list `.workspaces/music` as deletable.**
   Harmless-looking and not harmless: it is a symlink, not a build tree, and
   deleting it breaks every lane build with a path that does not exist.
-- **No repo builds without both checked out**, and there is no remote to fall
-  back on. The trigger for switching to a git dependency with tags is the first
-  time one consumer needs a version another does not — recorded in
-  @docs/ops/DECISIONS.md so it is not re-derived.
+- **Remote repository**: `https://github.com/poucet/music-rs.git`.
+  Consumers can reference it via Cargo git dependency (e.g.
+  `simply-fugue = { git = "https://github.com/poucet/music-rs.git" }`).
+  For active cross-repo hacking, consumers can override it via Cargo `[patch]`
+  in `.cargo/config.toml` or path dependencies.
 
 ## The doc web
 
