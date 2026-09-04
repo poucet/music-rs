@@ -3,7 +3,9 @@
 //! than keeping two copies in step by hand, so the thing worth testing is that
 //! the move changed nothing an existing caller can see.
 
-use simply_fugue::{CompositeFugue, RenderAudioRequest, RenderAudioResponse, default_instance};
+use simply_fugue::{
+    CompositeFugue, OutputFormat, RenderAudioRequest, RenderAudioResponse, default_instance,
+};
 
 /// `instance` is optional on the wire and defaults to `"default"` — and it is
 /// omitted again on the way out when it still is `"default"`, which is what
@@ -24,8 +26,8 @@ fn instance_defaults_in_and_disappears_out() {
     assert_eq!(serde_json::to_value(&named).unwrap()["instance"], "second");
 }
 
-/// Every optional request field is absent-able, and `output_format` is still a
-/// bare string — turning it into an enum is a decision, not a refactor.
+/// Every optional request field is absent-able, and `output_format` is now the
+/// [`OutputFormat`] enum — the decision Chris ruled on in FUGUE-API.md §6.6.
 #[test]
 fn a_full_request_parses_with_the_fields_nexus_documents() {
     let json = r#"{
@@ -41,7 +43,7 @@ fn a_full_request_parses_with_the_fields_nexus_documents() {
     assert_eq!(req.tempo_bpm, Some(90.0));
     assert_eq!(req.sample_rate, Some(44100));
     assert_eq!(req.block_size, Some(256));
-    assert_eq!(req.output_format.as_deref(), Some("file"));
+    assert_eq!(req.output_format, Some(OutputFormat::File));
     assert_eq!(req.output_path.as_deref(), Some("/tmp/out.wav"));
     assert_eq!(req.fugue.notes.len(), 1);
     assert_eq!(req.fugue.notes[0].note, 60);
@@ -49,6 +51,47 @@ fn a_full_request_parses_with_the_fields_nexus_documents() {
     let minimal: RenderAudioRequest = serde_json::from_str(r#"{"fugue":{}}"#).unwrap();
     assert_eq!(minimal.fugue, CompositeFugue::default());
     assert!(minimal.tempo_bpm.is_none() && minimal.output_format.is_none());
+}
+
+/// **Both spellings that worked keep working, absent means `File`, and
+/// anything else is now an error that names both.**
+///
+/// The field used to be `Option<String>` and only ever tested for `"file"`, so
+/// `"wav"` or `"File"` fell silently through to base64 — a typo that returned
+/// tens of megabytes of inline audio. Rejecting it is the one place FUGUE-API's
+/// compatibility rule is deliberately broken: such JSON parsed, but it never
+/// meant what its author typed (§3.5, ruled in §6.6).
+#[test]
+fn output_format_is_a_closed_set_that_defaults_to_file() {
+    for (spelling, expected) in [("file", OutputFormat::File), ("wav_base64", OutputFormat::WavBase64)] {
+        let req: RenderAudioRequest =
+            serde_json::from_str(&format!(r#"{{"fugue":{{}},"output_format":"{spelling}"}}"#))
+                .unwrap();
+        assert_eq!(req.output_format, Some(expected));
+        assert_eq!(req.output_format(), expected);
+        // …and it round-trips to the same spelling.
+        assert_eq!(serde_json::to_value(&req).unwrap()["output_format"], spelling);
+    }
+
+    // Absent resolves to `File` — the flipped default (§6.6) — while the field
+    // itself stays `None`, so a host can still tell silence from a choice.
+    let absent: RenderAudioRequest = serde_json::from_str(r#"{"fugue":{}}"#).unwrap();
+    assert_eq!(absent.output_format, None);
+    assert_eq!(absent.output_format(), OutputFormat::File);
+    assert_eq!(OutputFormat::default(), OutputFormat::File);
+
+    // Anything else is a deserialize error, and the message names both.
+    for typo in ["wav", "File", "base64", ""] {
+        let err = serde_json::from_str::<RenderAudioRequest>(&format!(
+            r#"{{"fugue":{{}},"output_format":"{typo}"}}"#
+        ))
+        .expect_err("an unknown output_format must not fall through to base64");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("file") && msg.contains("wav_base64"),
+            "the error must name both accepted values, got: {msg}"
+        );
+    }
 }
 
 /// **The response nexus sends today, unchanged.** The three added fields are

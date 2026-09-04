@@ -24,6 +24,28 @@ fn is_default_instance(s: &str) -> bool {
     s == "default"
 }
 
+/// Where a render's audio comes back.
+///
+/// A closed set, and that is the change: `output_format` used to be a bare
+/// `Option<String>` that only ever tested for `"file"`, so **any** other
+/// spelling — `"wav"`, `"File"`, a typo — fell through to base64 and returned
+/// tens of megabytes of inline audio nobody asked for. An unknown value is now
+/// a deserialize error that names both accepted spellings (FUGUE-API.md §3.5,
+/// ruled in §6.6).
+///
+/// The two spellings that already worked parse unchanged.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum OutputFormat {
+    /// Write a WAV file and return its path. **The default** — the loop is
+    /// `render_audio` → `analyze(wav)` in another process, which reads a file
+    /// (FUGUE-API.md §6.6).
+    #[default]
+    File,
+    /// Return the WAV inline, base64-encoded.
+    WavBase64,
+}
+
 /// Render a fugue offline, without an audio driver.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct RenderAudioRequest {
@@ -37,12 +59,25 @@ pub struct RenderAudioRequest {
     pub sample_rate: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub block_size: Option<usize>,
-    /// "wav_base64" (default) or "file".
+    /// `"file"` (the default) or `"wav_base64"`. Absent means
+    /// [`OutputFormat::File`]; [`RenderAudioRequest::output_format`] resolves
+    /// it, so no host repeats the default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub output_format: Option<String>,
+    pub output_format: Option<OutputFormat>,
     /// Target file path when output_format is "file".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output_path: Option<String>,
+}
+
+impl RenderAudioRequest {
+    /// The format this request asks for, with the absent case resolved.
+    ///
+    /// `Option` is kept on the field so a host can still tell "the caller said
+    /// `file`" from "the caller said nothing"; every host that only wants to
+    /// know *what to write* calls this instead of spelling the default again.
+    pub fn output_format(&self) -> OutputFormat {
+        self.output_format.unwrap_or_default()
+    }
 }
 
 /// What a render produced, and what it measured.

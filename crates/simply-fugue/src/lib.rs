@@ -30,7 +30,7 @@ pub use composite::{
     CcPointItem, CompiledFugue, CompositeFugue, NoteItem, ParamPointItem, PerNoteLane, PerNotePoint,
 };
 pub use note::{deserialize_note_pitch, format_note_name, parse_note_name};
-pub use render::{RenderAudioRequest, RenderAudioResponse, default_instance};
+pub use render::{OutputFormat, RenderAudioRequest, RenderAudioResponse, default_instance};
 pub use types::{
     CancelMode, CancelTarget, FugueDefinition, FugueEvent, FugueHeader, InterpolationMode,
     LoopMode, QuantizeMode, StartMode, TimedFugueEvent,

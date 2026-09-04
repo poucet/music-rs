@@ -464,11 +464,17 @@ impl CompositeFugue {
             FugueEvent::PerNotePressure { channel, note, pressure: value, interpolation }
         });
 
-        // Sort events chronologically
+        // Sort events chronologically, note-offs before note-ons at the same
+        // beat. Without the second key ties fell to stable-sort insertion order
+        // — raw_events, notes, ccs, params — so a same-pitch retrigger at a note
+        // boundary compiled as on-then-off and a host emitting the bytes in
+        // order killed the note it had just started. See
+        // [`FugueEvent::is_note_on`] for the rule.
         events.sort_by(|a, b| {
             a.beat_offset
                 .partial_cmp(&b.beat_offset)
                 .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.event.is_note_on().cmp(&b.event.is_note_on()))
         });
 
         CompiledFugue {

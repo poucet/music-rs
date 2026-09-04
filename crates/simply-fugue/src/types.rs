@@ -165,6 +165,22 @@ pub enum FugueEvent {
     },
 }
 
+impl FugueEvent {
+    /// Whether this event *starts* a note — a [`FugueEvent::NoteOn`], or the on
+    /// edge of a [`FugueEvent::TimedNote`].
+    ///
+    /// This is the tie-break every consumer sorts on, which is why it lives on
+    /// the event and not in one host's renderer. At a single instant a note-off
+    /// must come **before** a note-on, or a same-pitch retrigger at a note
+    /// boundary is an on followed by the previous note's off and the key goes
+    /// silent. `false < true`, so `(beat, is_note_on)` is the whole rule and
+    /// everything that is neither — a CC, a param, an expression point — keeps
+    /// its place ahead of the note it belongs to.
+    pub fn is_note_on(&self) -> bool {
+        matches!(self, FugueEvent::NoteOn { .. } | FugueEvent::TimedNote { .. })
+    }
+}
+
 /// An event placed at a specific beat offset within a Fugue.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct TimedFugueEvent {
