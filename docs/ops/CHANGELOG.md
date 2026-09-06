@@ -5,6 +5,13 @@ format is stated once in AGENTS.md §2.
 
 ## Unreleased
 
+#### Multi-channel CC support and per-note expression doc update (`I-53`, `I-91`) · 2026-09-06 18:10 · xrlntslz
+
+- **Multi-channel CC lanes (`I-53`)**: `CompositeFugue.ccs` is now keyed by `CcTarget`, which deserializes both plain controller numbers (`"74"`) and channel-qualified pairs (`"channel:controller"` like `"1:74"`). Serialization formats channel 0 as `"{controller}"` preserving byte-identical backwards compatibility. `CompositeFugue::compile()` passes `target.channel` to `FugueEvent::Cc` instead of hardcoding `channel: 0`.
+- **Per-note expression doc update (`I-91`)**: Updated `lib.rs`, `types.rs` (`PerNotePitchBend`, `PerNotePressure`), and `composite.rs` comments to reflect that both Flux and Nexus render per-note expressions.
+
+38 tests (was 35); `cargo clippy --workspace --all-targets` 0 warnings; 12-fixture wire-compat gate green unchanged.
+
 #### `output_format` closes, and note-offs sort first (`FUGUENEXUS-2`) · 2026-09-04 19:08 · prrqtusm
 
 The two shared-crate changes nexus needs to follow FUGUE-API.md §6's ruling.

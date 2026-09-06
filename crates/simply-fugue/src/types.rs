@@ -144,7 +144,7 @@ pub enum FugueEvent {
     /// Per-note pitch bend, in semitones, addressed by `(channel, note)`.
     ///
     /// The MIDI-2 / MPE shape, as distinct from channel-wide [`FugueEvent::PitchBend`].
-    /// No host renders this yet — see the crate docs.
+    /// Rendered by both Flux and Nexus (CLAP tuning, VST3 tuning).
     PerNotePitchBend {
         channel: u8,
         note: u8,
@@ -155,7 +155,7 @@ pub enum FugueEvent {
     /// Per-note pressure (0.0..=1.0), addressed by `(channel, note)`.
     ///
     /// The continuous counterpart of [`FugueEvent::PolyPressure`]'s 0..=127 byte.
-    /// No host renders this yet — see the crate docs.
+    /// Rendered by both Flux and Nexus (CLAP pressure, VST3 poly pressure).
     PerNotePressure {
         channel: u8,
         note: u8,

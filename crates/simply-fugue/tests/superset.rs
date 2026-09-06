@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 
 use simply_fugue::{
-    CancelTarget, CompositeFugue, FugueEvent, InterpolationMode, LoopMode, PerNoteLane,
+    CancelTarget, CcTarget, CompositeFugue, FugueEvent, InterpolationMode, LoopMode, PerNoteLane,
     PerNotePoint, QuantizeMode, TimedFugueEvent,
 };
 
@@ -225,8 +225,8 @@ fn cc_and_param_lanes_have_no_lane_level_curve() {
         r#"{"ccs":{"74":[[0,0],[1,127,"exp"]]},"params":{"7":[[0,0.0],[1,1.0,"linear"]]}}"#,
     )
     .unwrap();
-    assert_eq!(fugue.ccs[&74][0].curve, InterpolationMode::None);
-    assert_eq!(fugue.ccs[&74][1].curve, InterpolationMode::Exp);
+    assert_eq!(fugue.ccs[&CcTarget::from(74)][0].curve, InterpolationMode::None);
+    assert_eq!(fugue.ccs[&CcTarget::from(74)][1].curve, InterpolationMode::Exp);
     assert_eq!(fugue.params[&7][0].curve, InterpolationMode::None);
     assert_eq!(fugue.params[&7][1].curve, InterpolationMode::Linear);
 }
@@ -239,7 +239,7 @@ fn cc_and_param_lanes_have_no_lane_level_curve() {
 #[test]
 fn every_superset_field_round_trips() {
     let mut ccs = HashMap::new();
-    ccs.insert(74u8, vec![serde_json::from_str("[0, 30, \"linear\"]").unwrap()]);
+    ccs.insert(CcTarget::from(74), vec![serde_json::from_str("[0, 30, \"linear\"]").unwrap()]);
     let mut params = HashMap::new();
     params.insert(7u32, vec![serde_json::from_str("[1, 0.5]").unwrap()]);
 

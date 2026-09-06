@@ -158,6 +158,150 @@ where
     Ok((beat, value, curve))
 }
 
+/// A Control Change target: controller number (0..=127) and an optional MIDI channel (0..=15, default 0).
+///
+/// In JSON map keys for [`CompositeFugue::ccs`], this accepts both a plain controller number
+/// (e.g. `"74"` for channel 0, CC 74) and a channel-qualified pair (e.g. `"1:74"` for channel 1, CC 74).
+/// Serializes channel 0 as `"{controller}"` to preserve exact wire compatibility with older fugues.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, JsonSchema)]
+#[schemars(into = "String")]
+pub struct CcTarget {
+    pub channel: u8,
+    pub controller: u8,
+}
+
+impl CcTarget {
+    pub const fn new(channel: u8, controller: u8) -> Self {
+        Self { channel, controller }
+    }
+
+    pub const fn controller(controller: u8) -> Self {
+        Self { channel: 0, controller }
+    }
+}
+
+impl std::fmt::Display for CcTarget {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.channel == 0 {
+            write!(f, "{}", self.controller)
+        } else {
+            write!(f, "{}:{}", self.channel, self.controller)
+        }
+    }
+}
+
+impl std::str::FromStr for CcTarget {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let s = s.trim();
+        if let Some((ch_str, cc_str)) = s.split_once(':') {
+            let channel: u8 = ch_str
+                .trim()
+                .parse()
+                .map_err(|e| format!("invalid channel in CC target '{s}': {e}"))?;
+            if channel > 15 {
+                return Err(format!("MIDI channel {channel} in CC target '{s}' must be 0..=15"));
+            }
+            let controller: u8 = cc_str
+                .trim()
+                .parse()
+                .map_err(|e| format!("invalid controller in CC target '{s}': {e}"))?;
+            if controller > 127 {
+                return Err(format!("MIDI controller {controller} in CC target '{s}' must be 0..=127"));
+            }
+            Ok(CcTarget { channel, controller })
+        } else {
+            let controller: u8 = s
+                .parse()
+                .map_err(|e| format!("invalid controller in CC target '{s}': {e}"))?;
+            if controller > 127 {
+                return Err(format!("MIDI controller {controller} in CC target '{s}' must be 0..=127"));
+            }
+            Ok(CcTarget { channel: 0, controller })
+        }
+    }
+}
+
+impl From<u8> for CcTarget {
+    fn from(controller: u8) -> Self {
+        Self { channel: 0, controller }
+    }
+}
+
+impl From<(u8, u8)> for CcTarget {
+    fn from((channel, controller): (u8, u8)) -> Self {
+        Self { channel, controller }
+    }
+}
+
+impl From<CcTarget> for String {
+    fn from(target: CcTarget) -> Self {
+        target.to_string()
+    }
+}
+
+impl Serialize for CcTarget {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        if self.channel == 0 {
+            serializer.serialize_str(&self.controller.to_string())
+        } else {
+            serializer.serialize_str(&format!("{}:{}", self.channel, self.controller))
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for CcTarget {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct CcTargetVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for CcTargetVisitor {
+            type Value = CcTarget;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str(
+                    "a controller number 0..=127 (e.g. '74') or 'channel:controller' (e.g. '1:74')",
+                )
+            }
+
+            fn visit_str<E>(self, s: &str) -> Result<CcTarget, E>
+            where
+                E: serde::de::Error,
+            {
+                s.parse().map_err(serde::de::Error::custom)
+            }
+
+            fn visit_u64<E>(self, v: u64) -> Result<CcTarget, E>
+            where
+                E: serde::de::Error,
+            {
+                if v > 127 {
+                    return Err(E::custom(format!("MIDI controller {v} must be 0..=127")));
+                }
+                Ok(CcTarget { channel: 0, controller: v as u8 })
+            }
+
+            fn visit_i64<E>(self, v: i64) -> Result<CcTarget, E>
+            where
+                E: serde::de::Error,
+            {
+                if !(0..=127).contains(&v) {
+                    return Err(E::custom(format!("MIDI controller {v} must be 0..=127")));
+                }
+                Ok(CcTarget { channel: 0, controller: v as u8 })
+            }
+        }
+
+        deserializer.deserialize_any(CcTargetVisitor)
+    }
+}
+
 /// A Control Change automation point: `[beat, value, curve?]` or object `{ beat, value, curve }`.
 #[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
 pub struct CcPointItem {
@@ -325,9 +469,9 @@ pub struct CompositeFugue {
     #[serde(default)]
     pub notes: Vec<NoteItem>,
 
-    /// CC automation points keyed by CC number (0..=127).
+    /// CC automation points keyed by CC target (controller number 0..=127 or "channel:controller" like "1:74").
     #[serde(default)]
-    pub ccs: HashMap<u8, Vec<CcPointItem>>,
+    pub ccs: HashMap<CcTarget, Vec<CcPointItem>>,
 
     /// Parameter automation points keyed by parameter ID.
     #[serde(default)]
@@ -421,13 +565,13 @@ impl CompositeFugue {
             }
         }
 
-        for (&controller, points) in &self.ccs {
+        for (&target, points) in &self.ccs {
             for pt in points {
                 events.push(TimedFugueEvent {
                     beat_offset: pt.beat,
                     event: FugueEvent::Cc {
-                        channel: 0,
-                        controller,
+                        channel: target.channel,
+                        controller: target.controller,
                         value: pt.value,
                         interpolation: pt.curve,
                     },
@@ -454,8 +598,8 @@ impl CompositeFugue {
             }
         }
 
-        // Per-note expression: one event per point, sparse. Nothing renders
-        // these yet on either host; a renderer that does interpolates between
+        // Per-note expression: one event per point, sparse. Both hosts (Flux
+        // and Nexus) render these; a renderer that does interpolates between
         // consecutive points itself, exactly as it does for a param lane.
         push_per_note_lane(&mut events, &mut max_beat, &self.pitch_bends, |channel, note, value, interpolation| {
             FugueEvent::PerNotePitchBend { channel, note, semitones: value, interpolation }

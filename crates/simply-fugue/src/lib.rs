@@ -14,12 +14,12 @@
 //! aliases, per-note pitch bend and pressure, `tag`, and a cancel *target*.
 //! Nothing that existed before changed spelling, default, or meaning.
 //!
-//! ## What is carried but not rendered
+//! ## Expression and event rendering
 //!
-//! Neither host renders per-note expression today, and nexus's offline renderer
-//! also drops `PitchBend` / `Pressure` / `PolyPressure`. These variants are in
-//! the wire format so a fugue written for one host parses on the other; a tool
-//! description must not promise they sound.
+//! Both Flux and Nexus render per-note expression (pitch bend and pressure),
+//! as well as channel pitch bend, channel pressure, and polyphonic pressure.
+//! Host capabilities and plugin instance support are reported in `warnings`
+//! on the `render_audio` response.
 
 pub mod composite;
 pub mod note;
@@ -27,7 +27,8 @@ pub mod render;
 pub mod types;
 
 pub use composite::{
-    CcPointItem, CompiledFugue, CompositeFugue, NoteItem, ParamPointItem, PerNoteLane, PerNotePoint,
+    CcPointItem, CcTarget, CompiledFugue, CompositeFugue, NoteItem, ParamPointItem, PerNoteLane,
+    PerNotePoint,
 };
 pub use note::{deserialize_note_pitch, format_note_name, parse_note_name};
 pub use render::{OutputFormat, RenderAudioRequest, RenderAudioResponse, default_instance};
@@ -97,9 +98,9 @@ mod tests {
 
         let fugue: CompositeFugue = serde_json::from_str(json_data).unwrap();
         assert_eq!(fugue.notes.len(), 1);
-        assert_eq!(fugue.ccs.get(&74).unwrap().len(), 2);
-        assert_eq!(fugue.ccs.get(&74).unwrap()[0].curve, InterpolationMode::Linear);
-        assert_eq!(fugue.ccs.get(&74).unwrap()[1].curve, InterpolationMode::Exp);
+        assert_eq!(fugue.ccs.get(&CcTarget::from(74)).unwrap().len(), 2);
+        assert_eq!(fugue.ccs.get(&CcTarget::from(74)).unwrap()[0].curve, InterpolationMode::Linear);
+        assert_eq!(fugue.ccs.get(&CcTarget::from(74)).unwrap()[1].curve, InterpolationMode::Exp);
 
         let compiled = fugue.compile();
         assert_eq!(compiled.events.len(), 3);
