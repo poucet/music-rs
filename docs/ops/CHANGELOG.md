@@ -5,6 +5,21 @@ format is stated once in AGENTS.md §2.
 
 ## Unreleased
 
+#### `simply-midi` decodes program change, and re-exports the port matcher (`MIDI-PC`) · 2026-10-10 21:25 · ytrumrsl
+
+- **`MidiMessage::ProgramChange { channel, program }`** — 0xC0, the one
+  channel-voice message the decoder skipped. It names a sound, not a knob
+  position, so `source()` is `None`, exactly like the note messages. Additive:
+  no existing variant or test changed meaning. The tussen hub's MIDI engine
+  publishes a `program` signal and until now only its fake-MIDI path could
+  produce one.
+- **`simply_midi::name_matches`** — the port matcher re-exported from
+  `simply-midi-clock` (already a dependency, and the reason it is one), so a
+  consumer filtering port names by the same rule as `input::open_inputs` does
+  not grow its own copy.
+
+134 tests passed / 0 failed / 1 ignored; clippy 0 warnings; fmt clean.
+
 #### The protocol-floor crates move in from flux (`MIDIMOVE`) · 2026-10-10 19:50 · kzkwnxsv
 
 - **Five crates join the workspace**, moved from flux so any project can take

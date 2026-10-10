@@ -13,7 +13,7 @@
 //! channels, zones — is likewise the consumer's; this crate stops at the
 //! wire.
 //!
-//! Out of scope: sysex, running status, MIDI 2.0, program change, and the
+//! Out of scope: sysex, running status, MIDI 2.0, and the
 //! clock messages (a host schedules those against its own transport —
 //! `simply-midi-clock` owns their bytes and pacing).
 
@@ -25,3 +25,17 @@ mod message;
 pub mod input;
 
 pub use message::{MidiMessage, SOURCE_AFTERTOUCH, SOURCE_COUNT, SOURCE_PITCH_BEND, source_name};
+
+// The one port matcher, re-exported so a consumer that filters port names by
+// the same rule as [`input::open_inputs`] does not grow its own copy (or its
+// own dependency on the clock crate).
+pub use simply_midi_clock::name_matches;
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn the_port_matcher_is_re_exported() {
+        assert!(crate::name_matches("MPK mini mk3 Port 1", "mpk"));
+        assert!(!crate::name_matches("IAC Driver Bus 1", "mpk"));
+    }
+}

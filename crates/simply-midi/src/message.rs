@@ -23,6 +23,12 @@ pub enum MidiMessage {
         cc: u8,
         value: u8,
     },
+    /// Program change: select patch `program` on the channel. It names a
+    /// sound, not a knob position, so [`MidiMessage::source`] is `None`.
+    ProgramChange {
+        channel: u8,
+        program: u8,
+    },
     /// 14-bit, 0..=16383 with 8192 at rest.
     PitchBend {
         channel: u8,
@@ -80,12 +86,13 @@ impl MidiMessage {
                 velocity => Some(Self::NoteOn { channel, key: d1, velocity }),
             },
             0xb0 => Some(Self::ControlChange { channel, cc: d1, value: *bytes.get(2)? & 0x7f }),
+            0xc0 => Some(Self::ProgramChange { channel, program: d1 }),
             0xd0 => Some(Self::ChannelPressure { channel, value: d1 }),
             0xe0 => {
                 let msb = u16::from(*bytes.get(2)? & 0x7f);
                 Some(Self::PitchBend { channel, value: (msb << 7) | u16::from(d1) })
             }
-            _ => None, // program change (0xc0)
+            _ => None,
         }
     }
 
@@ -95,6 +102,7 @@ impl MidiMessage {
             Self::NoteOn { channel, .. }
             | Self::NoteOff { channel, .. }
             | Self::ControlChange { channel, .. }
+            | Self::ProgramChange { channel, .. }
             | Self::PitchBend { channel, .. }
             | Self::ChannelPressure { channel, .. }
             | Self::PolyPressure { channel, .. } => channel,
@@ -114,6 +122,8 @@ impl MidiMessage {
             }
             // These address voices, not knobs.
             Self::NoteOn { .. } | Self::NoteOff { .. } | Self::PolyPressure { .. } => None,
+            // A program change names a sound, not a knob position.
+            Self::ProgramChange { .. } => None,
         }
     }
 }
@@ -149,6 +159,15 @@ mod tests {
             MidiMessage::decode(&[0xd2, 90]),
             Some(MidiMessage::ChannelPressure { channel: 2, value: 90 })
         );
+        assert_eq!(
+            MidiMessage::decode(&[0xc5, 0]),
+            Some(MidiMessage::ProgramChange { channel: 5, program: 0 }),
+            "program 0 is the first patch, not an absence"
+        );
+        assert_eq!(
+            MidiMessage::decode(&[0xc0, 127]),
+            Some(MidiMessage::ProgramChange { channel: 0, program: 127 })
+        );
         // Poly aftertouch: per-note pressure, routed by the consumer's MPE layer.
         assert_eq!(
             MidiMessage::decode(&[0xa0, 60, 100]),
@@ -162,7 +181,7 @@ mod tests {
         assert_eq!(MidiMessage::decode(&[0x90]), None, "truncated");
         assert_eq!(MidiMessage::decode(&[0x40, 60, 100]), None, "running status");
         assert_eq!(MidiMessage::decode(&[0xf0, 1, 2]), None, "sysex");
-        assert_eq!(MidiMessage::decode(&[0xc0, 3]), None, "program change");
+        assert_eq!(MidiMessage::decode(&[0xc0]), None, "truncated program change");
     }
 
     #[test]
@@ -176,6 +195,10 @@ mod tests {
         let touch = MidiMessage::ChannelPressure { channel: 0, value: 0 };
         assert_eq!(touch.source(), Some((SOURCE_AFTERTOUCH, 0.0)));
         assert_eq!(MidiMessage::NoteOn { channel: 0, key: 60, velocity: 1 }.source(), None);
+        // A program change names a sound, not a knob position.
+        let program = MidiMessage::ProgramChange { channel: 4, program: 12 };
+        assert_eq!(program.source(), None);
+        assert_eq!(program.channel(), 4);
         // Poly aftertouch addresses voices, not knobs.
         let touch = MidiMessage::PolyPressure { channel: 0, key: 60, value: 100 };
         assert_eq!(touch.source(), None);
