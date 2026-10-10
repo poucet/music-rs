@@ -5,6 +5,29 @@ format is stated once in AGENTS.md §2.
 
 ## Unreleased
 
+#### The protocol-floor crates move in from flux (`MIDIMOVE`) · 2026-10-10 19:50 · kzkwnxsv
+
+- **Five crates join the workspace**, moved from flux so any project can take
+  them without flux: `simply-osc` (OSC 1.0 — wire format, pattern matching,
+  UDP receiver, and the `simply-osc` CLI sender), `simply-link` (Ableton Link
+  — our own implementation of the protocol), `simply-midi-clock` (MIDI beat
+  clock messages, pacing, output-port selection), `simply-link-midi` (the
+  `link-midi` bridge binary), and `simply-midi` (MIDI 1.0 channel-voice
+  decoding and midir device input, freshly split out of flux-midi — every
+  entry point takes the midir client name, because the name a port is
+  registered under belongs to the host application).
+- Fresh 0.1.0 releases in this home; flux keeps the history and now takes
+  them by path (git once published). Workspace gains `midir`, `socket2`,
+  `if-addrs`, `ctrlc` — each justified in the manifest comment and needed by
+  exactly one crate.
+- `rustfmt.toml` added (the house style both consumer repos already format
+  to) and one fmt sweep, so `cargo fmt --check` passes workspace-wide.
+- The top-level README's crate table covers all six crates and names the
+  two binaries (`link-midi`, `simply-osc`) with a run line each; the two
+  binary crates carry their own READMEs with the details.
+
+133 tests passed / 0 failed / 1 ignored; clippy 0 warnings; fmt clean.
+
 #### Multi-channel CC support and per-note expression doc update (`I-53`, `I-91`) · 2026-09-06 18:10 · xrlntslz
 
 - **Multi-channel CC lanes (`I-53`)**: `CompositeFugue.ccs` is now keyed by `CcTarget`, which deserializes both plain controller numbers (`"74"`) and channel-qualified pairs (`"channel:controller"` like `"1:74"`). Serialization formats channel 0 as `"{controller}"` preserving byte-identical backwards compatibility. `CompositeFugue::compile()` passes `target.channel` to `FugueEvent::Cc` instead of hardcoding `channel: 0`.

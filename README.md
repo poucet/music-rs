@@ -4,13 +4,27 @@ Canonical musical definitions, performance sequencing models, and tool contracts
 
 ## Overview
 
-`music-rs` provides pure-data contracts and musical primitives for audio synthesis, plugin hosting, and AI-driven sound generation. Crates in this repository are designed to be lightweight, dependency-minimal, and deterministic wire formats.
+`music-rs` provides pure-data contracts, musical primitives, and protocol implementations for audio synthesis, plugin hosting, and AI-driven sound generation. Crates in this repository are designed to be lightweight, dependency-minimal, and deterministic.
 
 ## Crates
 
 | Crate | Description |
 | --- | --- |
 | [`simply-fugue`](crates/simply-fugue) | Canonical Fugue musical performance schema, compact note notation (`[beat, "C3", duration, velocity, channel]`), pitch parsing (`C3` = 60), automation curves, and `render_audio` request/response types. |
+| [`simply-osc`](crates/simply-osc) | Open Sound Control 1.0 — typed messages, bundles, the wire format, address pattern matching, a thin UDP receiver, and the `simply-osc` command-line sender. Zero dependencies. |
+| [`simply-link`](crates/simply-link) | Ableton Link — an independent implementation of the protocol: peer discovery, the shared timeline, ghost-time measurement, quantum, and start/stop sync. |
+| [`simply-midi`](crates/simply-midi) | MIDI 1.0 channel-voice decoding, and midir device input behind the `device` feature. |
+| [`simply-midi-clock`](crates/simply-midi-clock) | MIDI beat clock out: the real-time messages, the follower's position, sleep-then-spin pacing, and output-port selection. |
+| [`simply-link-midi`](crates/simply-link-midi) | The `link-midi` binary — an Ableton Link session out as MIDI beat clock, phase-aligned to the session's quantum. |
+
+## Binaries
+
+| Binary | What it does | Run |
+| --- | --- | --- |
+| `link-midi` | Joins the Ableton Link session on your network and sends MIDI beat clock to one output port, in time and in phase — a drum machine's bar one lands on the session's downbeat. Follows only; never changes the tempo or the transport. | `cargo run -p simply-link-midi -- run --port NAME` (or `cargo install --path crates/simply-link-midi`) |
+| `simply-osc` | Sends one OSC message over UDP from the command line — types inferred, `i:`/`f:`/`s:` prefixes to force one. The by-hand half of `simply-osc`; the library receives. | `cargo run -p simply-osc -- /address 0.5` (or `cargo install --path crates/simply-osc`) |
+
+Each crate's own README carries the details: [`simply-link-midi`](crates/simply-link-midi/README.md), [`simply-osc`](crates/simply-osc/README.md).
 
 ### Design Principles
 
