@@ -1,0 +1,18 @@
+[package]
+name = "simply-link-midi"
+description = "link-midi: an Ableton Link session out as MIDI beat clock, phase-aligned to the session's quantum"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "link-midi"
+path = "src/bin/link-midi.rs"
+
+[dependencies]
+simply-link.workspace = true
+simply-midi-clock = { workspace = true, features = ["device"] }
+# Ctrl-C stops the follower (a Stop) and leaves the session (a ByeBye)
+# instead of cutting both off mid-run.
+ctrlc.workspace = true
+serde_json.workspace = true

@@ -63,7 +63,9 @@ fn a_full_request_parses_with_the_fields_nexus_documents() {
 /// meant what its author typed (§3.5, ruled in §6.6).
 #[test]
 fn output_format_is_a_closed_set_that_defaults_to_file() {
-    for (spelling, expected) in [("file", OutputFormat::File), ("wav_base64", OutputFormat::WavBase64)] {
+    for (spelling, expected) in
+        [("file", OutputFormat::File), ("wav_base64", OutputFormat::WavBase64)]
+    {
         let req: RenderAudioRequest =
             serde_json::from_str(&format!(r#"{{"fugue":{{}},"output_format":"{spelling}"}}"#))
                 .unwrap();

@@ -74,10 +74,9 @@ fn abutting_notes_of_one_pitch_keep_the_off_first() {
 /// which is the order a player means.
 #[test]
 fn controls_at_a_beat_precede_the_note_on_at_that_beat() {
-    let fugue: CompositeFugue = serde_json::from_str(
-        r#"{"notes": [[0, "C3", 1.0, 100]], "ccs": {"74": [[0.0, 30]]}}"#,
-    )
-    .unwrap();
+    let fugue: CompositeFugue =
+        serde_json::from_str(r#"{"notes": [[0, "C3", 1.0, 100]], "ccs": {"74": [[0.0, 30]]}}"#)
+            .unwrap();
 
     let kinds: Vec<&'static str> = fugue
         .compile()

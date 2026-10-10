@@ -41,10 +41,8 @@ pub fn parse_note_name(name: &str) -> Result<u8, String> {
             'b' | 'B' => {
                 // A 'b' is a flat when the octave follows it, or when no
                 // accidental has been read yet; otherwise it ends the run.
-                let octave_follows = chars
-                    .clone()
-                    .nth(1)
-                    .is_some_and(|next| next.is_ascii_digit() || next == '-');
+                let octave_follows =
+                    chars.clone().nth(1).is_some_and(|next| next.is_ascii_digit() || next == '-');
                 if octave_follows || accidental == 0 {
                     accidental -= 1;
                     chars.next();
@@ -61,9 +59,8 @@ pub fn parse_note_name(name: &str) -> Result<u8, String> {
         return Err(format!("missing octave in note '{s}'"));
     }
 
-    let octave: i32 = octave_str
-        .parse()
-        .map_err(|_| format!("invalid octave '{octave_str}' in '{s}'"))?;
+    let octave: i32 =
+        octave_str.parse().map_err(|_| format!("invalid octave '{octave_str}' in '{s}'"))?;
 
     // In DAW convention: octave -2 -> base 0 (C-2 = 0).
     // MIDI = (octave + 2) * 12 + base_semitone + accidental.

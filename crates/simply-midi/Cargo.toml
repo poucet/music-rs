@@ -1,0 +1,23 @@
+[package]
+name = "simply-midi"
+description = "MIDI 1.0 channel-voice decoding and midir device input — the protocol floor, no host flavour"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+# Live device input (midir). Off for a consumer that only wants the decoder
+# — a plugin host delivers the bytes itself and never opens a port.
+device = ["dep:midir"]
+
+[dependencies]
+midir = { workspace = true, optional = true }
+# The one port matcher — the same substring rule for every place a setting
+# names a port, written once and shared with the clock and the Link bridge.
+simply-midi-clock.workspace = true
+
+[dev-dependencies]
+# The crate's own tests run with `device` on, so the workspace gate
+# exercises the port-enumeration safety test (no hardware needed — it
+# asserts a list or a readable error, never a hang).
+simply-midi = { path = ".", features = ["device"] }

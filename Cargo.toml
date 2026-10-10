@@ -16,3 +16,23 @@ rust-version = "1.90"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 schemars = "1"
+
+# The protocol-floor crates (moved from flux, 2026-10-10). Each row below
+# exists because exactly one of them needs it; nothing here is shared
+# convenience.
+# midir: the one real-device door — behind the `device` feature of
+# simply-midi and simply-midi-clock, never default.
+midir = "0.11.0"
+# socket2: SO_REUSEADDR/SO_REUSEPORT on simply-link's discovery socket, so
+# several Link peers on one machine can all hear the multicast group.
+socket2 = { version = "0.6.5", features = ["all"] }
+# if-addrs: the machine's interfaces — simply-link joins and announces the
+# multicast group on each.
+if-addrs = "0.15"
+# ctrlc: link-midi's Ctrl-C — stop the follower and leave the session
+# instead of cutting both off mid-run.
+ctrlc = "3"
+
+# Intra-workspace
+simply-link = { path = "crates/simply-link" }
+simply-midi-clock = { path = "crates/simply-midi-clock" }

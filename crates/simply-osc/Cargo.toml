@@ -1,0 +1,16 @@
+[package]
+name = "simply-osc"
+description = "Open Sound Control 1.0 — an independent implementation of the protocol layer: typed messages, bundles, the wire format, address pattern matching, and a thin UDP receiver"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# The command-line sender: `simply-osc /flux/cutoff 0.5` pushes one OSC
+# message over UDP — the by-hand half; the library receives.
+[[bin]]
+name = "simply-osc"
+path = "src/main.rs"
+
+[dependencies]
+# None. The whole protocol is std: big-endian integers, 4-byte padding,
+# one UdpSocket. That is the point of owning it.

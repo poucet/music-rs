@@ -1,0 +1,93 @@
+//! Two of this crate's peers, on real sockets, finding each other: one
+//! founds a session, the other joins it through a real measurement burst,
+//! and a tempo change on one reaches the other.
+//!
+//! **Off the real Link network by construction**: an administratively
+//! scoped group (239.255.76.78, not Link's 224.76.78.75) on a port of its
+//! own, with a multicast time-to-live of 0, so a datagram sent even on a
+//! real interface is delivered on this machine and never transmitted. No
+//! Link app can hear these sessions and nothing here reaches another
+//! machine.
+
+use std::net::{Ipv4Addr, UdpSocket};
+use std::thread;
+use std::time::{Duration, Instant};
+
+use simply_link::{Config, Link, Network};
+
+fn private_network() -> Network {
+    // A port nothing else is using: ask the OS for one, then let it go.
+    let port = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap().local_addr().unwrap().port();
+    Network {
+        group: Ipv4Addr::new(239, 255, 76, 78),
+        port,
+        interface: Ipv4Addr::LOCALHOST,
+        multicast_ttl: 0,
+    }
+}
+
+fn wait_for(what: &str, mut ok: impl FnMut() -> bool) {
+    let until = Instant::now() + Duration::from_secs(10);
+    while !ok() {
+        assert!(Instant::now() < until, "timed out waiting for {what}");
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
+#[test]
+fn a_follower_joins_a_founded_session_and_follows_its_tempo() {
+    let net = private_network();
+    let founder =
+        Link::join_on(Config { found_after: Some(200_000), bpm: 128.0, ..Config::default() }, net)
+            .expect("founder");
+    wait_for("the founder to found", || founder.state().joined());
+    let follower = Link::join_on(Config::default(), net).expect("follower");
+    wait_for("the follower to join", || follower.state().joined());
+    let f = follower.state();
+    assert_eq!(f.session, founder.state().session);
+    assert!((f.tempo() - 128.0).abs() < 1e-3);
+    wait_for("each to see the other", || founder.state().peers == 1 && follower.state().peers == 1);
+
+    // Both agree on the beat at the same instant, to well within a
+    // millisecond's worth of beat (loopback round trips are microseconds).
+    let at = Instant::now();
+    let a = founder.state().beat_at(founder.clock().micros(at));
+    let b = follower.state().beat_at(follower.clock().micros(at));
+    assert!((a - b).abs() < 128.0 / 60.0 * 0.001, "{a} vs {b}");
+
+    founder.propose_tempo(97.0, founder.clock().now());
+    wait_for("the tempo change to arrive", || (follower.state().tempo() - 97.0).abs() < 1e-3);
+
+    // Leaving says goodbye: the founder forgets the follower at once.
+    drop(follower);
+    wait_for("the goodbye", || founder.state().peers == 0);
+}
+
+/// The defect this crate shipped with: a Link app on this machine announces
+/// over **loopback**, and a peer joined on the default route's interface
+/// alone never hears it (measured against a DJ app: 16 announcements in 4 s
+/// on loopback, none on Wi-Fi). Here the other app is one of ours, bound to
+/// loopback and nothing else; the peer under test is on every interface,
+/// as `Link::join` puts it. It must hear the loopback founder, measure it
+/// through the loopback endpoint that founder announced, join — and be
+/// heard back, which needs its own loopback copy carrying 127.0.0.1.
+#[test]
+fn a_peer_on_every_interface_joins_an_app_that_is_only_on_loopback() {
+    let loopback_only = private_network();
+    let everywhere = Network { interface: Ipv4Addr::UNSPECIFIED, ..loopback_only };
+    let app = Link::join_on(
+        Config { found_after: Some(200_000), bpm: 123.0, ..Config::default() },
+        loopback_only,
+    )
+    .expect("the loopback-only app");
+    wait_for("the app to found", || app.state().joined());
+    let ours = Link::join_on(Config::default(), everywhere).expect("our peer");
+    wait_for("our peer to join the app's session", || ours.state().joined());
+    assert_eq!(ours.state().session, app.state().session);
+    assert!((ours.state().tempo() - 123.0).abs() < 1e-3);
+    wait_for("the app to hear us back", || app.state().peers == 1);
+    let at = Instant::now();
+    let a = app.state().beat_at(app.clock().micros(at));
+    let b = ours.state().beat_at(ours.clock().micros(at));
+    assert!((a - b).abs() < 123.0 / 60.0 * 0.001, "{a} vs {b}");
+}

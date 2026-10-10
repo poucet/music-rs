@@ -57,19 +57,9 @@ impl<'de> Deserialize<'de> for NoteItem {
         }
 
         match NoteItemHelper::deserialize(deserializer)? {
-            NoteItemHelper::Object {
-                beat,
-                note,
-                duration,
-                velocity,
-                channel,
-            } => Ok(NoteItem {
-                beat,
-                note,
-                duration,
-                velocity,
-                channel,
-            }),
+            NoteItemHelper::Object { beat, note, duration, velocity, channel } => {
+                Ok(NoteItem { beat, note, duration, velocity, channel })
+            }
             NoteItemHelper::Array(arr) => {
                 if arr.len() < 2 {
                     return Err(serde::de::Error::custom(
@@ -96,31 +86,14 @@ impl<'de> Deserialize<'de> for NoteItem {
                     }
                 };
 
-                let duration = if arr.len() >= 3 {
-                    arr[2].as_f64().unwrap_or(1.0)
-                } else {
-                    1.0
-                };
+                let duration = if arr.len() >= 3 { arr[2].as_f64().unwrap_or(1.0) } else { 1.0 };
 
-                let velocity = if arr.len() >= 4 {
-                    arr[3].as_u64().unwrap_or(100) as u8
-                } else {
-                    100
-                };
+                let velocity =
+                    if arr.len() >= 4 { arr[3].as_u64().unwrap_or(100) as u8 } else { 100 };
 
-                let channel = if arr.len() >= 5 {
-                    arr[4].as_u64().unwrap_or(0) as u8
-                } else {
-                    0
-                };
+                let channel = if arr.len() >= 5 { arr[4].as_u64().unwrap_or(0) as u8 } else { 0 };
 
-                Ok(NoteItem {
-                    beat,
-                    note,
-                    duration,
-                    velocity,
-                    channel,
-                })
+                Ok(NoteItem { beat, note, duration, velocity, channel })
             }
         }
     }
@@ -147,14 +120,10 @@ where
     if arr.len() < 2 {
         return Err(E::custom(format!("{what} array must have at least [beat, value]")));
     }
-    let beat = arr[0]
-        .as_f64()
-        .ok_or_else(|| E::custom("beat must be a number"))?;
-    let value = read_value(&arr[1])
-        .ok_or_else(|| E::custom(format!("value must be {value_expected}")))?;
-    let curve = arr
-        .get(2)
-        .map(|c| serde_json::from_value(c.clone()).unwrap_or_default());
+    let beat = arr[0].as_f64().ok_or_else(|| E::custom("beat must be a number"))?;
+    let value =
+        read_value(&arr[1]).ok_or_else(|| E::custom(format!("value must be {value_expected}")))?;
+    let curve = arr.get(2).map(|c| serde_json::from_value(c.clone()).unwrap_or_default());
     Ok((beat, value, curve))
 }
 
@@ -208,15 +177,18 @@ impl std::str::FromStr for CcTarget {
                 .parse()
                 .map_err(|e| format!("invalid controller in CC target '{s}': {e}"))?;
             if controller > 127 {
-                return Err(format!("MIDI controller {controller} in CC target '{s}' must be 0..=127"));
+                return Err(format!(
+                    "MIDI controller {controller} in CC target '{s}' must be 0..=127"
+                ));
             }
             Ok(CcTarget { channel, controller })
         } else {
-            let controller: u8 = s
-                .parse()
-                .map_err(|e| format!("invalid controller in CC target '{s}': {e}"))?;
+            let controller: u8 =
+                s.parse().map_err(|e| format!("invalid controller in CC target '{s}': {e}"))?;
             if controller > 127 {
-                return Err(format!("MIDI controller {controller} in CC target '{s}' must be 0..=127"));
+                return Err(format!(
+                    "MIDI controller {controller} in CC target '{s}' must be 0..=127"
+                ));
             }
             Ok(CcTarget { channel: 0, controller })
         }
@@ -334,9 +306,8 @@ impl<'de> Deserialize<'de> for CcPointItem {
         match CcPointHelper::deserialize(deserializer)? {
             CcPointHelper::Object { beat, value, curve } => Ok(CcPointItem { beat, value, curve }),
             CcPointHelper::Array(arr) => {
-                let (beat, value, curve) = parse_point_array(&arr, "CC point", "0..127", |v| {
-                    v.as_u64().map(|n| n as u8)
-                })?;
+                let (beat, value, curve) =
+                    parse_point_array(&arr, "CC point", "0..127", |v| v.as_u64().map(|n| n as u8))?;
                 Ok(CcPointItem { beat, value, curve: curve.unwrap_or_default() })
             }
         }
@@ -586,11 +557,7 @@ impl CompositeFugue {
             for pt in points {
                 events.push(TimedFugueEvent {
                     beat_offset: pt.beat,
-                    event: FugueEvent::Param {
-                        id,
-                        value: pt.value,
-                        interpolation: pt.curve,
-                    },
+                    event: FugueEvent::Param { id, value: pt.value, interpolation: pt.curve },
                 });
                 if pt.beat > max_beat {
                     max_beat = pt.beat;
@@ -601,12 +568,28 @@ impl CompositeFugue {
         // Per-note expression: one event per point, sparse. Both hosts (Flux
         // and Nexus) render these; a renderer that does interpolates between
         // consecutive points itself, exactly as it does for a param lane.
-        push_per_note_lane(&mut events, &mut max_beat, &self.pitch_bends, |channel, note, value, interpolation| {
-            FugueEvent::PerNotePitchBend { channel, note, semitones: value, interpolation }
-        });
-        push_per_note_lane(&mut events, &mut max_beat, &self.pressures, |channel, note, value, interpolation| {
-            FugueEvent::PerNotePressure { channel, note, pressure: value, interpolation }
-        });
+        push_per_note_lane(
+            &mut events,
+            &mut max_beat,
+            &self.pitch_bends,
+            |channel, note, value, interpolation| FugueEvent::PerNotePitchBend {
+                channel,
+                note,
+                semitones: value,
+                interpolation,
+            },
+        );
+        push_per_note_lane(
+            &mut events,
+            &mut max_beat,
+            &self.pressures,
+            |channel, note, value, interpolation| FugueEvent::PerNotePressure {
+                channel,
+                note,
+                pressure: value,
+                interpolation,
+            },
+        );
 
         // Sort events chronologically, note-offs before note-ons at the same
         // beat. Without the second key ties fell to stable-sort insertion order
@@ -621,10 +604,6 @@ impl CompositeFugue {
                 .then_with(|| a.event.is_note_on().cmp(&b.event.is_note_on()))
         });
 
-        CompiledFugue {
-            duration_beats: max_beat.max(1.0),
-            events,
-            loop_mode: self.loop_mode,
-        }
+        CompiledFugue { duration_beats: max_beat.max(1.0), events, loop_mode: self.loop_mode }
     }
 }

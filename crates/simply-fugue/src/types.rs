@@ -89,24 +89,11 @@ pub enum CancelTarget {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum FugueEvent {
     /// Note On event.
-    NoteOn {
-        channel: u8,
-        note: u8,
-        velocity: u8,
-    },
+    NoteOn { channel: u8, note: u8, velocity: u8 },
     /// Note Off event.
-    NoteOff {
-        channel: u8,
-        note: u8,
-        velocity: u8,
-    },
+    NoteOff { channel: u8, note: u8, velocity: u8 },
     /// Timed Note (duration in beats).
-    TimedNote {
-        channel: u8,
-        note: u8,
-        velocity: u8,
-        duration_beats: f64,
-    },
+    TimedNote { channel: u8, note: u8, velocity: u8, duration_beats: f64 },
     /// MIDI Control Change event.
     Cc {
         channel: u8,
@@ -126,21 +113,11 @@ pub enum FugueEvent {
         interpolation: InterpolationMode,
     },
     /// Pitch Bend event (-8192..=8191).
-    PitchBend {
-        channel: u8,
-        value: i16,
-    },
+    PitchBend { channel: u8, value: i16 },
     /// Channel Pressure / Aftertouch (0..=127).
-    Pressure {
-        channel: u8,
-        value: u8,
-    },
+    Pressure { channel: u8, value: u8 },
     /// Polyphonic Per-Note Aftertouch (0..=127).
-    PolyPressure {
-        channel: u8,
-        note: u8,
-        value: u8,
-    },
+    PolyPressure { channel: u8, note: u8, value: u8 },
     /// Per-note pitch bend, in semitones, addressed by `(channel, note)`.
     ///
     /// The MIDI-2 / MPE shape, as distinct from channel-wide [`FugueEvent::PitchBend`].

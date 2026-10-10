@@ -123,10 +123,7 @@ fn forever_is_an_alias_for_loop() {
     let canonical: CompositeFugue = serde_json::from_str(r#"{"loop_mode":"loop"}"#).unwrap();
     assert_eq!(canonical.loop_mode, simply_fugue::LoopMode::Loop);
     // An alias is read-only: the canonical spelling is what goes back out.
-    assert_eq!(
-        serde_json::to_value(&forever).unwrap()["loop_mode"],
-        serde_json::json!("loop")
-    );
+    assert_eq!(serde_json::to_value(&forever).unwrap()["loop_mode"], serde_json::json!("loop"));
 }
 
 #[test]
@@ -138,10 +135,7 @@ fn immediate_is_an_alias_for_none_quantize() {
     let canonical: FugueHeader =
         serde_json::from_str(r#"{"duration_beats":4.0,"quantize":"none"}"#).unwrap();
     assert_eq!(canonical.quantize, QuantizeMode::None);
-    assert_eq!(
-        serde_json::to_value(&header).unwrap()["quantize"],
-        serde_json::json!("none")
-    );
+    assert_eq!(serde_json::to_value(&header).unwrap()["quantize"], serde_json::json!("none"));
 }
 
 /// Every mode default is load-bearing: changing one silently changes what an
@@ -211,14 +205,14 @@ fn the_documented_object_form_parses_and_agrees_with_the_array_form() {
 #[test]
 fn malformed_points_are_still_rejected() {
     for bad in [
-        r#"{"notes":[[0]]}"#,                  // too short
-        r#"{"notes":[["nope","C3"]]}"#,        // beat not a number
-        r#"{"notes":[[0,{"a":1}]]}"#,          // note neither number nor name
-        r#"{"notes":[[0,"H9"]]}"#,             // not a note name
-        r#"{"notes":[[0,200]]}"#,              // out of MIDI range
-        r#"{"ccs":{"74":[[0]]}}"#,             // CC point too short
-        r#"{"ccs":{"74":[["x",1]]}}"#,         // CC beat not a number
-        r#"{"params":{"7":[[0,"x"]]}}"#,       // param value not a number
+        r#"{"notes":[[0]]}"#,                              // too short
+        r#"{"notes":[["nope","C3"]]}"#,                    // beat not a number
+        r#"{"notes":[[0,{"a":1}]]}"#,                      // note neither number nor name
+        r#"{"notes":[[0,"H9"]]}"#,                         // not a note name
+        r#"{"notes":[[0,200]]}"#,                          // out of MIDI range
+        r#"{"ccs":{"74":[[0]]}}"#,                         // CC point too short
+        r#"{"ccs":{"74":[["x",1]]}}"#,                     // CC beat not a number
+        r#"{"params":{"7":[[0,"x"]]}}"#,                   // param value not a number
         r#"{"pitch_bends":[{"note":60,"points":[[0]]}]}"#, // per-note point too short
     ] {
         assert!(

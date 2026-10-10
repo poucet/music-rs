@@ -1,0 +1,13 @@
+[package]
+name = "simply-link"
+description = "Ableton Link — an independent Rust implementation of the protocol: peer discovery, the shared timeline, ghost-time measurement, quantum and start/stop sync"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+# SO_REUSEADDR/SO_REUSEPORT on the discovery socket, so several Link peers
+# on one machine can all hear the multicast group.
+socket2.workspace = true
+# The machine's interfaces: the group is joined, and announced to, on each.
+if-addrs.workspace = true
