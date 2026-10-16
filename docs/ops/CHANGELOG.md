@@ -5,6 +5,31 @@ format is stated once in AGENTS.md §2.
 
 ## Unreleased
 
+#### `link-midi` across machines: an interface already in the group counts as joined (`LINK-MIDI-NET`) · 2026-10-16 04:40 · zrlqzqlx
+
+- **Audited for cross-machine following; it already worked.** Discovery joins
+  224.76.78.75:20808 on every up, non-point-to-point IPv4 interface (Wi-Fi,
+  Ethernet, bridges, loopback), on a socket bound to `0.0.0.0` with address
+  and port reuse. Every announcement leaves each interface with
+  `IP_MULTICAST_IF` set, TTL 1, and loop on, and carries that interface's own
+  address as its `mep4` (never 127.0.0.1 off-machine). Unicast answers name the
+  address the peer reaches us at. The responder binds `0.0.0.0`. Interfaces are
+  re-read every 5 s.
+- **One fix in `simply-link`'s `join`:** `EADDRINUSE` from `IP_ADD_MEMBERSHIP`
+  now counts as joined. Membership belongs to the interface, not to the address.
+  When Wi-Fi rejoins with a new address, the old membership is still there, so
+  the rescan's join failed and that interface was retried every 5 s and never
+  announced on again. An alias address had the same problem. Unit-tested on
+  loopback; the Wi-Fi case itself needs a real address change to watch.
+- **`simply-link` example `founder`**: founds a session on one interface
+  address (TTL 0) and steps its tempo. This is the stand-in "other machine".
+  Witnessed: `link-midi session` and `run --dry-run` followed it at
+  100 → 110 → 125 BPM over en0's address (192.168.55.119), with no loopback
+  path offered.
+- `link-midi` README: "Proving it across machines", the two-laptop procedure.
+
+135 tests passed / 0 failed / 1 ignored; clippy 0 warnings; fmt clean.
+
 #### `simply-midi` decodes program change, and re-exports the port matcher (`MIDI-PC`) · 2026-10-10 21:25 · ytrumrsl
 
 - **`MidiMessage::ProgramChange { channel, program }`** — 0xC0, the one

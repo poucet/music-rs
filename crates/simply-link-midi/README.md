@@ -73,6 +73,21 @@ transport — and step 5 sends to no port.
 6. Only then a real port: `link-midi run --port <device>` with the device
    stopped, and press play in the app.
 
+## Proving it across machines
+
+On one machine this is proven only as far as a LAN *address*: a second
+peer pinned to en0's IP (`cargo run -p simply-link --example founder --
+<en0 IP> 100 130`), followed by `link-midi session`/`run`, measured through
+that address and not loopback. The kernel still delivers those datagrams
+internally; a real wire, a real Wi-Fi access point and its multicast
+filtering need two laptops on the same network:
+
+1. Laptop A: start a Link app (Ableton, Flux, Rekordbox, TouchDesigner), Link on, **Start Stop Sync on**, 97 BPM, playing.
+2. Laptop B: `link-midi listen --seconds 5` shows A's announcements **from A's LAN address** (not `127.0.0.1`), 97 BPM, with a `mep4` on A's network. Hearing nothing means the network filters multicast (guest Wi-Fi, client isolation) or a firewall drops UDP 20808. Use a phone hotspot or a cable instead.
+3. Laptop B: `link-midi session --seconds 10` reaches `joined`, 97 BPM, 1 peer; A's Link indicator counts one more peer.
+4. On A, change the tempo to 120: within a second, B's `session` line reads 120.
+5. Laptop B: `link-midi run --port <device>` starts the device on A's next bar line, follows tempo changes, and stops when A stops.
+
 Built on [`simply-link`](../simply-link) (the Link peer — discovery, shared
 timeline, ghost-time measurement) and
 [`simply-midi-clock`](../simply-midi-clock) (the clock messages and the

@@ -168,12 +168,28 @@ pub fn address_for(interfaces: &[Interface], peer: Ipv4Addr) -> Option<Ipv4Addr>
 }
 
 /// Join `group` on each of `interfaces` that will have it, and say which did.
+///
+/// Membership is per *interface*, not per address, so "already a member"
+/// counts as joined: a second address on the same interface (an alias), or
+/// the new address Wi-Fi comes back with after rejoining — the membership
+/// taken through the old one outlives it, and the leave through the old
+/// address fails because that address is gone. Taken as a failure, that
+/// interface would be retried every [`RESCAN`] and never announced on again.
 fn join(socket: &UdpSocket, group: Ipv4Addr, interfaces: &[Interface]) -> Vec<Interface> {
     interfaces
         .iter()
         .copied()
-        .filter(|i| socket.join_multicast_v4(&group, &i.addr).is_ok())
+        .filter(|i| joined(socket.join_multicast_v4(&group, &i.addr)))
         .collect()
+}
+
+/// Whether a join's result leaves the socket a member: it worked, or the
+/// interface had the group already.
+fn joined(result: io::Result<()>) -> bool {
+    match result {
+        Ok(()) => true,
+        Err(e) => e.kind() == io::ErrorKind::AddrInUse,
+    }
 }
 
 struct Shared {
@@ -496,6 +512,23 @@ mod tests {
         let got = select(this_mac());
         let addrs: Vec<Ipv4Addr> = got.iter().map(|i| i.addr).collect();
         assert_eq!(addrs, [ip("127.0.0.1"), ip("192.168.55.119")], "loopback included");
+    }
+
+    /// Two addresses on one interface — here loopback, named twice — share
+    /// one membership; the second join is refused as already-a-member, and
+    /// must still count, or that address would never be announced on (the
+    /// Wi-Fi-came-back-with-a-new-address case, which needs a real network
+    /// change to see).
+    #[test]
+    fn an_interface_already_in_the_group_counts_as_joined() {
+        let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).unwrap();
+        let group = ip("239.255.76.79");
+        let lo = Interface { addr: Ipv4Addr::LOCALHOST, netmask: ip("255.0.0.0") };
+        assert_eq!(join(&socket, group, &[lo]), [lo]);
+        let again = socket.join_multicast_v4(&group, &lo.addr);
+        assert_eq!(again.as_ref().map_err(io::Error::kind), Err(io::ErrorKind::AddrInUse));
+        assert_eq!(join(&socket, group, &[lo]), [lo], "already a member is joined");
+        assert!(!joined(Err(io::ErrorKind::AddrNotAvailable.into())), "a real failure is not");
     }
 
     #[test]
