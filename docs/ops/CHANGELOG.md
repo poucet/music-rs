@@ -5,7 +5,7 @@ format is stated once in AGENTS.md §2.
 
 ## Unreleased
 
-#### `link-midi` exits quietly when its reader hangs up · 2026-10-16 05:10 · xswwsutm
+#### `link-midi` exits quietly when its reader hangs up · 2026-10-16 05:02 · xswwsutm
 
 - `link-midi listen | head` (and `session`, `ports`, `run --dry-run`) panicked
   with "failed printing to stdout: Broken pipe" once the reader closed. Every
