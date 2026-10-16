@@ -5,6 +5,17 @@ format is stated once in AGENTS.md §2.
 
 ## Unreleased
 
+#### `link-midi` exits quietly when its reader hangs up · 2026-10-16 05:10 · xswwsutm
+
+- `link-midi listen | head` (and `session`, `ports`, `run --dry-run`) panicked
+  with "failed printing to stdout: Broken pipe" once the reader closed. Every
+  stdout line now goes through an `out!` macro that exits 0 on `BrokenPipe`,
+  and exits 1 with a message on any other write error. `simply-osc` writes
+  nothing to stdout, so it was never affected.
+- Test `tests/broken_pipe.rs`: spawns `link-midi listen`, closes its stdout
+  straight away, and expects status 0 with no panic. It fails on the old
+  binary.
+
 #### `link-midi` across machines: an interface already in the group counts as joined (`LINK-MIDI-NET`) · 2026-10-16 04:40 · zrlqzqlx
 
 - **Audited for cross-machine following; it already worked.** Discovery joins

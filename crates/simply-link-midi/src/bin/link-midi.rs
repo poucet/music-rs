@@ -15,6 +15,21 @@ use simply_link::{Config, Link, Network, SessionState, Status, discovery_listene
 use simply_link_midi::{ClockEvent, Schedule, Settings, Sink, Transport, run};
 use simply_midi_clock::{MidiOutputConnection, open_output, output_port_names};
 
+/// `println!`, but a reader that hung up (`link-midi listen | head`) ends
+/// the program quietly with status 0 instead of panicking on a broken pipe.
+macro_rules! out {
+    ($($arg:tt)*) => {{
+        use std::io::Write as _;
+        if let Err(e) = writeln!(std::io::stdout().lock(), $($arg)*) {
+            if e.kind() == std::io::ErrorKind::BrokenPipe {
+                std::process::exit(0);
+            }
+            eprintln!("link-midi: cannot write to stdout: {e}");
+            std::process::exit(1);
+        }
+    }};
+}
+
 /// The name this program registers with the MIDI system.
 const CLIENT: &str = "link-midi";
 
@@ -157,16 +172,16 @@ fn session(seconds: f64, json: bool) -> Result<(), String> {
     let link = Link::join(Config::default()).map_err(|e| format!("could not join Link: {e}"))?;
     let until = Instant::now() + Duration::from_secs_f64(seconds);
     if !json {
-        println!("joined the Link group as {} — listening {seconds} s", link.node());
+        out!("joined the Link group as {} — listening {seconds} s", link.node());
     }
     while Instant::now() < until {
         thread::sleep(Duration::from_millis(500));
         if !json {
-            println!("{}", line(&link.state(), link.clock().now()));
+            out!("{}", line(&link.state(), link.clock().now()));
         }
     }
     if json {
-        println!("{}", describe(&link.state(), link.clock().now()));
+        out!("{}", describe(&link.state(), link.clock().now()));
     }
     Ok(())
 }
@@ -181,7 +196,7 @@ fn listen(seconds: f64, json: bool) -> Result<(), String> {
         .map_err(|e| format!("could not join the Link group {GROUP}:{PORT}: {e}"))?;
     let interfaces: Vec<String> = joined.iter().map(|i| i.addr.to_string()).collect();
     if !json {
-        println!("listening on {} for {seconds} s", interfaces.join(", "));
+        out!("listening on {} for {seconds} s", interfaces.join(", "));
     }
     let until = Instant::now() + Duration::from_secs_f64(seconds);
     let mut buf = [0u8; 2048];
@@ -198,7 +213,7 @@ fn listen(seconds: f64, json: bool) -> Result<(), String> {
                 "playing": m.start_stop().map(|s| s.playing), "endpoint": m.endpoint().map(|e| e.to_string()),
                 "entries": m.entries.len(), "bytes": hex,
             })),
-            Ok(m) => println!(
+            Ok(m) => out!(
                 "{from} {:?} node {} session {} {} {} mep4 {}",
                 m.kind,
                 m.node,
@@ -210,16 +225,13 @@ fn listen(seconds: f64, json: bool) -> Result<(), String> {
             Err(e) if json => heard.push(json!({
                 "from": from.to_string(), "error": e.to_string(), "bytes": hex,
             })),
-            Err(e) => println!("{from} undecodable ({e}): {hex}"),
+            Err(e) => out!("{from} undecodable ({e}): {hex}"),
         }
     }
     if json {
-        println!(
-            "{}",
-            json!({ "interfaces": interfaces, "seconds": seconds, "announcements": heard })
-        );
+        out!("{}", json!({ "interfaces": interfaces, "seconds": seconds, "announcements": heard }));
     } else {
-        println!("{count} announcement(s) in {seconds} s");
+        out!("{count} announcement(s) in {seconds} s");
     }
     Ok(())
 }
@@ -243,14 +255,14 @@ impl Sink for Print {
         let ms = (at - self.start) as f64 / 1000.0;
         if event == ClockEvent::Tick {
             if self.ticks.is_multiple_of(24) {
-                println!("{ms:>10.3} ms  Tick (beat {})", self.ticks / 24);
+                out!("{ms:>10.3} ms  Tick (beat {})", self.ticks / 24);
             }
             self.ticks += 1;
         } else {
             if event == ClockEvent::Start {
                 self.ticks = 0;
             }
-            println!("{ms:>10.3} ms  {event:?}");
+            out!("{ms:>10.3} ms  {event:?}");
         }
     }
 }
@@ -299,11 +311,11 @@ fn main() -> ExitCode {
         Command::Ports { json } => {
             let names = output_port_names(CLIENT);
             if json {
-                println!("{}", json!({ "ports": names }));
+                out!("{}", json!({ "ports": names }));
             } else if names.is_empty() {
-                println!("no MIDI output ports");
+                out!("no MIDI output ports");
             } else {
-                names.iter().for_each(|n| println!("{n}"));
+                names.iter().for_each(|n| out!("{n}"));
             }
             Ok(())
         }
