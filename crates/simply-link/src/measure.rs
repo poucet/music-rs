@@ -19,7 +19,9 @@
 //! Everything here is pure; the sockets that carry it are in [`crate::net`].
 
 use crate::timeline::Micros;
-use crate::wire::{Entry, Measurement, MeasurementKind};
+use crate::wire::{Entry, Measurement, MeasurementKind, SessionId};
+#[cfg(test)]
+use crate::wire::NodeId;
 
 /// Pings in one burst.
 pub const BURST: usize = 20;
@@ -36,26 +38,39 @@ pub fn ping(host_now: Micros) -> Vec<u8> {
     Measurement { kind: MeasurementKind::Ping, entries: vec![Entry::HostTime(host_now)] }.encode()
 }
 
-/// A responder's answer to `request`, if it is a ping: every entry of the
-/// ping echoed untouched, plus the responder's ghost time now. Echoing
-/// rather than rebuilding means a pinger's own bookkeeping comes back to it
-/// whatever it chose to put there.
-pub fn pong(request: &[u8], ghost_now: Micros) -> Option<Vec<u8>> {
+/// A responder's answer to `request`, if it is a ping: the session the
+/// responder is in (`sess`), its ghost time now, then every entry of the
+/// ping echoed untouched. Echoing rather than rebuilding means a pinger's
+/// own bookkeeping comes back to it whatever it chose to put there.
+///
+/// **The session is not optional.** An Ableton peer counts a pong only if
+/// it names the session being measured, and fails the whole measurement
+/// on one that does not — so a responder that leaves it out can never be
+/// measured, and nobody can join a session through it.
+pub fn pong(request: &[u8], session: SessionId, ghost_now: Micros) -> Option<Vec<u8>> {
     let ping = Measurement::decode(request).ok()?;
     if ping.kind != MeasurementKind::Ping {
         return None;
     }
-    let mut entries = vec![Entry::GhostTime(ghost_now)];
-    entries.extend(ping.entries.into_iter().filter(|e| !matches!(e, Entry::GhostTime(_))));
+    let mut entries = vec![Entry::Session(session), Entry::GhostTime(ghost_now)];
+    entries.extend(
+        ping.entries.into_iter().filter(|e| !matches!(e, Entry::GhostTime(_) | Entry::Session(_))),
+    );
     Some(Measurement { kind: MeasurementKind::Pong, entries }.encode())
 }
 
-/// One estimate of the intercept from a pong received at `host_received`
-/// for a ping sent at `host_sent`, or `None` if it is not a pong, has no
-/// ghost time, or took too long to say anything precise.
-pub fn sample(response: &[u8], host_sent: Micros, host_received: Micros) -> Option<Micros> {
+/// One estimate of `session`'s intercept from a pong received at
+/// `host_received` for a ping sent at `host_sent`, or `None` if it is not
+/// a pong, names another session (the responder moved on while we
+/// measured), has no ghost time, or took too long to say anything precise.
+pub fn sample(
+    response: &[u8],
+    session: SessionId,
+    host_sent: Micros,
+    host_received: Micros,
+) -> Option<Micros> {
     let pong = Measurement::decode(response).ok()?;
-    if pong.kind != MeasurementKind::Pong {
+    if pong.kind != MeasurementKind::Pong || pong.session() != Some(session) {
         return None;
     }
     let ghost = pong.ghost_time()?;
@@ -81,12 +96,14 @@ pub fn settle(samples: &mut [Micros]) -> Option<Micros> {
 mod tests {
     use super::*;
 
+    const S: SessionId = NodeId(*b"session1");
+
     /// A responder whose ghost clock is 1 000 000 µs ahead of the pinger's
     /// host clock, over a network that takes `up` there and `down` back.
     fn exchange(sent: Micros, up: Micros, down: Micros) -> Option<Micros> {
         let offset = 1_000_000;
-        let reply = pong(&ping(sent), sent + up + offset)?;
-        sample(&reply, sent, sent + up + down)
+        let reply = pong(&ping(sent), S, sent + up + offset)?;
+        sample(&reply, S, sent, sent + up + down)
     }
 
     #[test]
@@ -112,21 +129,37 @@ mod tests {
     }
 
     #[test]
-    fn a_pong_echoes_the_ping_and_only_answers_pings() {
-        let reply = pong(&ping(42), 99).unwrap();
+    fn a_pong_names_its_session_echoes_the_ping_and_only_answers_pings() {
+        let reply = pong(&ping(42), S, 99).unwrap();
         let m = Measurement::decode(&reply).unwrap();
         assert_eq!(m.kind, MeasurementKind::Pong);
+        assert_eq!(m.session(), Some(S), "an Ableton peer drops a pong without it");
         assert_eq!(m.host_time(), Some(42));
         assert_eq!(m.ghost_time(), Some(99));
-        assert_eq!(pong(&reply, 1), None, "a pong is not answered");
-        assert_eq!(pong(b"garbage", 1), None);
+        assert_eq!(pong(&reply, S, 1), None, "a pong is not answered");
+        assert_eq!(pong(b"garbage", S, 1), None);
+    }
+
+    /// A responder that changed session while we measured it answers for
+    /// the other one: that pong says nothing about the session we asked.
+    #[test]
+    fn a_pong_for_another_session_is_not_a_sample() {
+        let other = NodeId(*b"session2");
+        let reply = pong(&ping(10), other, 1_000).unwrap();
+        assert_eq!(sample(&reply, S, 10, 20), None);
+        assert!(sample(&reply, other, 10, 20).is_some());
+        let unnamed = Measurement {
+            kind: MeasurementKind::Pong,
+            entries: vec![Entry::GhostTime(1_000), Entry::HostTime(10)],
+        };
+        assert_eq!(sample(&unnamed.encode(), S, 10, 20), None, "nor is one naming none");
     }
 
     #[test]
     fn a_slow_or_backwards_round_trip_is_discarded() {
         assert_eq!(exchange(0, MAX_ROUND_TRIP, 1), None);
-        let reply = pong(&ping(10), 5).unwrap();
-        assert_eq!(sample(&reply, 10, 9), None, "received before it was sent");
-        assert_eq!(sample(&ping(10), 10, 11), None, "a ping is not a sample");
+        let reply = pong(&ping(10), S, 5).unwrap();
+        assert_eq!(sample(&reply, S, 10, 9), None, "received before it was sent");
+        assert_eq!(sample(&ping(10), S, 10, 11), None, "a ping is not a sample");
     }
 }

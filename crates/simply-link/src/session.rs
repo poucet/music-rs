@@ -23,17 +23,22 @@
 //!    before, so an old announcement still in flight cannot undo a newer
 //!    change of ours. The start/stop state with the latest timestamp wins.
 //! 4. **Found** (optional — [`Config::found_after`]). A peer that has heard
-//!    no session for that long founds one: its session id is its node id
-//!    and its host time is the ghost time (Goltz 2018, §6).
-//! 5. **Merge.** A founder that is alone yields to a foreign session whose
-//!    id sorts before its own. The ordering is this crate's convention —
-//!    what other implementations do when two sessions meet is not
-//!    publicly documented — and a follower (rule 4 off) never founds, so it
-//!    never has to decide.
+//!    no session for that long founds one: its session id is its node id,
+//!    and its ghost clock starts at 0 — a session's ghost time is its age.
+//! 5. **Merge.** Two sessions meeting become one by the rule every
+//!    Ableton peer follows, so that all of them pick the same winner: a
+//!    joined peer measures each foreign session it has not yet decided
+//!    on, and the **older** session wins — the one whose ghost time is
+//!    ahead of ours by more than [`SESSION_EPS`] — with a tie inside that
+//!    margin going to the id that sorts first. A peer that loses moves,
+//!    timeline and all; one that wins remembers the decision until that
+//!    session's last peer is gone. A newcomer is the youngest session in
+//!    the room (an Ableton peer resets its ghost clock to 0 when Link is
+//!    switched on), so it joins the session it finds — whoever founded it.
 //! 6. **Re-measure** every [`Config::remeasure_every`] against a member, so
 //!    drift between the two machines' clocks is taken up.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::net::{IpAddr, SocketAddr, SocketAddrV4};
 
 use crate::timeline::{GhostXForm, MICROBEATS, Micros, StartStop, Timeline, next_boundary, phase};
@@ -198,6 +203,9 @@ pub struct Engine {
     start_stop: Option<StartStop>,
     endpoint: Option<SocketAddrV4>,
     peers: BTreeMap<NodeId, Peer>,
+    /// Foreign sessions measured and found not to win over ours (rule 5),
+    /// kept until no peer is in them.
+    outranked: BTreeSet<SessionId>,
     searching_since: Micros,
     last_announce: Option<Micros>,
     measuring: Option<(SessionId, Micros)>,
@@ -207,6 +215,9 @@ pub struct Engine {
 
 /// A measurement that has not answered in this long is given up on.
 const MEASURE_TIMEOUT: Micros = 5_000_000;
+/// Two sessions whose ghost times are closer than this are a tie, settled
+/// by id (rule 5) — Ableton's own margin.
+pub const SESSION_EPS: Micros = 500_000;
 
 impl Engine {
     pub fn new(node: NodeId, config: Config, now: Micros) -> Self {
@@ -221,6 +232,7 @@ impl Engine {
             start_stop: None,
             endpoint: None,
             peers: BTreeMap::new(),
+            outranked: BTreeSet::new(),
             searching_since: now,
             last_announce: None,
             measuring: None,
@@ -242,6 +254,12 @@ impl Engine {
     /// one to give — what the measurement responder answers with.
     pub fn ghost(&self, host: Micros) -> Option<Micros> {
         (self.status == Status::Joined).then(|| self.xform.host_to_ghost(host))
+    }
+
+    /// The measurement responder's answer to `ping` at host time `host`:
+    /// our session and its ghost time. Silent until we are in a session.
+    pub fn pong(&self, ping: &[u8], host: Micros) -> Option<Vec<u8>> {
+        crate::measure::pong(ping, self.session, self.ghost(host)?)
     }
 
     pub fn state(&self) -> SessionState {
@@ -352,11 +370,10 @@ impl Engine {
             if announce {
                 out.push(self.announce(now));
             }
-        } else if session != self.session || !joined {
-            let alone = joined && self.founder && self.members() == 0;
-            if !joined || (alone && session < self.session) {
-                out.extend(self.measure(session, now));
-            }
+        } else if !self.outranked.contains(&session) {
+            // Not yet in a session: the first one heard is joined. In one:
+            // a foreign session is measured to see which of the two wins.
+            out.extend(self.measure(session, now));
         }
         out
     }
@@ -379,9 +396,18 @@ impl Engine {
             }
             return Vec::new();
         };
-        if self.status == Status::Joined && session == self.session {
-            self.xform = GhostXForm { intercept };
-            return Vec::new();
+        if self.status == Status::Joined {
+            if session == self.session {
+                self.xform = GhostXForm { intercept };
+                return Vec::new();
+            }
+            let ahead = (now + intercept) - self.xform.host_to_ghost(now);
+            let theirs_wins =
+                ahead > SESSION_EPS || (ahead.abs() < SESSION_EPS && session < self.session);
+            if !theirs_wins {
+                self.outranked.insert(session);
+                return Vec::new();
+            }
         }
         // Join: the newest start/stop and the founder's timeline (or any
         // member's) become ours.
@@ -395,6 +421,11 @@ impl Engine {
         };
         let timeline = self.peers.get(&session).map_or(first.timeline, |p| p.timeline);
         let start_stop = members.iter().filter_map(|p| p.start_stop).max_by_key(|s| s.timestamp);
+        if self.status == Status::Joined {
+            // Merged: the session we leave is the one that lost.
+            self.outranked.insert(self.session);
+        }
+        self.outranked.remove(&session);
         self.session = session;
         self.timeline = timeline;
         self.start_stop = start_stop;
@@ -411,6 +442,8 @@ impl Engine {
         for p in self.peers.values_mut() {
             p.endpoints.retain(|h| h.expires > now);
         }
+        let peers = &self.peers;
+        self.outranked.retain(|s| peers.values().any(|p| p.session == *s));
         if let Some((session, since)) = self.measuring
             && now - since > MEASURE_TIMEOUT
         {
@@ -421,7 +454,17 @@ impl Engine {
                 if self.last_announce.is_none_or(|t| now - t >= self.config.announce_every) {
                     out.push(self.announce(now));
                 }
-                // The founder's host time *is* ghost time: nothing to measure.
+                // A foreign session still undecided — heard while another
+                // measurement ran, or one that failed and is due a retry.
+                let undecided = self
+                    .peers
+                    .values()
+                    .map(|p| p.session)
+                    .find(|s| *s != self.session && !self.outranked.contains(s));
+                if let Some(session) = undecided {
+                    out.extend(self.measure(session, now));
+                }
+                // The founder's ghost clock is its own: nothing to measure.
                 if !self.founder
                     && self.members() > 0
                     && now - self.measured_at >= self.config.remeasure_every
@@ -442,8 +485,11 @@ impl Engine {
                 {
                     self.session = self.node;
                     self.founder = true;
-                    self.xform = GhostXForm::default();
-                    self.timeline = Timeline::at(self.config.bpm, 0.0, now);
+                    // Ghost time starts at 0 as the session does, as an
+                    // Ableton peer's does, so it reads as the session's age
+                    // — what rule 5 compares.
+                    self.xform = GhostXForm { intercept: -now };
+                    self.timeline = Timeline::at(self.config.bpm, 0.0, 0);
                     self.status = Status::Joined;
                     out.push(self.announce(now));
                 }
@@ -510,12 +556,17 @@ mod tests {
     /// Run a whole measurement burst of `pinger` against `responder`, whose
     /// host clock reads `skew` more than the pinger's, over a network that
     /// takes 400 µs each way.
-    fn measure_burst(responder: &Engine, skew: Micros, start: Micros) -> Option<Micros> {
+    fn measure_burst(
+        responder: &Engine,
+        session: SessionId,
+        skew: Micros,
+        start: Micros,
+    ) -> Option<Micros> {
         let mut samples = Vec::new();
         for i in 0..measure::BURST as Micros {
             let sent = start + i * 10_000;
-            let reply = measure::pong(&measure::ping(sent), responder.ghost(sent + 400 + skew)?)?;
-            samples.extend(measure::sample(&reply, sent, sent + 800));
+            let reply = responder.pong(&measure::ping(sent), sent + 400 + skew)?;
+            samples.extend(measure::sample(&reply, session, sent, sent + 800));
         }
         measure::settle(&mut samples)
     }
@@ -553,8 +604,10 @@ mod tests {
         assert_eq!(*session, FOUNDER);
         assert_eq!(endpoint.port(), 4000);
         assert_eq!(joiner.state().status, Status::Measuring);
-        let intercept = measure_burst(&founder, skew, 4_000_000);
-        assert_eq!(intercept, Some(skew), "a symmetric network measures the skew exactly");
+        let intercept = measure_burst(&founder, FOUNDER, skew, 4_000_000);
+        // The founder's ghost clock started at 0 when it founded, at 11 s.
+        let expect = skew - 11_000_000;
+        assert_eq!(intercept, Some(expect), "a symmetric network measures the offset exactly");
         let joined = joiner.on_measured(FOUNDER, intercept, 4_300_000);
         assert!(matches!(joined.as_slice(), [Action::Broadcast(_)]));
         let s = joiner.state();
@@ -574,7 +627,7 @@ mod tests {
         let mut joiner = Engine::new(JOINER, Config::default(), 0);
         deliver(&announced, &mut joiner, 1, 1_100_000);
         // The joiner announces as it joins; the founder hears it and answers.
-        let answer = joiner.on_measured(FOUNDER, measure_burst(&founder, 0, 1_100_000), 1_500_000);
+        let answer = joiner.on_measured(FOUNDER, measure_burst(&founder, FOUNDER, 0, 1_100_000), 1_500_000);
         let back = deliver(&answer, &mut founder, 2, 1_500_000);
         assert!(matches!(back.as_slice(), [Action::Send(..)]), "{back:?}");
         assert_eq!(founder.state().peers, 1);
@@ -656,18 +709,43 @@ mod tests {
         assert!(matches!(joiner.tick(2_300_000).as_slice(), [Action::Measure { .. }]));
     }
 
+    /// Two founders meet; each measures the other's session and both pick
+    /// the same winner — the older session, or within the tie margin the
+    /// id that sorts first — so neither waits on the other.
     #[test]
     fn two_lone_founders_converge_on_one_session() {
-        let (mut a, a_says) = found(0);
-        let mut b = Engine::new(NodeId(*b"aaaaaaaa"), founding(), 0);
-        b.set_endpoint("10.0.0.2:4001".parse().unwrap());
-        let b_says = b.tick(1_000_000);
-        // `aaaaaaaa` sorts first, so the other founder yields to it…
-        let a_does = deliver(&b_says, &mut a, 2, 1_000_100);
-        assert!(a_does.iter().any(|x| matches!(x, Action::Measure { .. })), "{a_does:?}");
-        // …and it does not yield back.
-        let b_does = deliver(&a_says, &mut b, 1, 1_000_100);
-        assert!(!b_does.iter().any(|x| matches!(x, Action::Measure { .. })), "{b_does:?}");
+        // `a` founds at 1 s. (When b founds, its id, who wins): a tie
+        // settled by id either way, then a b older and a b younger by more
+        // than the margin, whatever the ids say.
+        let (aaa, zzz) = (NodeId(*b"aaaaaaaa"), NodeId(*b"zzzzzzzz"));
+        for (b_founds, b_id, winner) in [
+            (1_200_000, aaa, aaa),
+            (1_200_000, zzz, FOUNDER),
+            (0, zzz, zzz),
+            (1_800_000, aaa, FOUNDER),
+        ] {
+            let b_id = b_id.0;
+            let (mut a, a_says) = found(0);
+            let mut b = Engine::new(NodeId(b_id), founding(), b_founds - 1_000_000);
+            b.set_endpoint("10.0.0.2:4001".parse().unwrap());
+            let b_says = b.tick(b_founds);
+            let now = 2_000_000;
+            // Both hear each other and both measure — the deadlock was
+            // each waiting for the other to move.
+            let a_does = deliver(&b_says, &mut a, 2, now);
+            let b_does = deliver(&a_says, &mut b, 1, now);
+            for does in [&a_does, &b_does] {
+                assert!(does.iter().any(|x| matches!(x, Action::Measure { .. })), "{does:?}");
+            }
+            let a_back = a.on_measured(b.node, measure_burst(&b, b.node, 0, now), now + 1);
+            let b_back = b.on_measured(FOUNDER, measure_burst(&a, FOUNDER, 0, now), now + 1);
+            deliver(&a_back, &mut b, 1, now + 2);
+            deliver(&b_back, &mut a, 2, now + 2);
+            let (sa, sb) = (a.state(), b.state());
+            assert_eq!(sa.session, sb.session, "one session");
+            assert_eq!(sa.session, Some(winner), "{b_founds} {b_id:?}");
+            assert_eq!((sa.peers, sb.peers), (1, 1));
+        }
     }
 
     /// A peer on this machine announces itself twice — over loopback with

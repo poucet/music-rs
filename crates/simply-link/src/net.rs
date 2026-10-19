@@ -272,18 +272,25 @@ impl Shared {
     fn measure(self: &Arc<Self>, session: SessionId, endpoint: SocketAddrV4) {
         let intercept = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0))
             .ok()
-            .and_then(|socket| burst(&socket, endpoint, &self.clock));
+            .and_then(|socket| burst(&socket, endpoint, session, &self.clock));
         let now = self.clock.now();
         let actions = self.engine().on_measured(session, intercept, now);
         self.perform(actions);
     }
 }
 
-/// One measurement burst against `endpoint` over `socket`: [`measure::BURST`]
-/// pings, one at a time, each waiting up to [`measure::PONG_TIMEOUT_MS`] for
-/// its answer, settled to the median. A pong carrying another ping's host
-/// time (a late answer to an earlier one) is not counted against this one.
-pub fn burst(socket: &UdpSocket, endpoint: SocketAddrV4, clock: &HostClock) -> Option<Micros> {
+/// One measurement burst of `session` against `endpoint` over `socket`:
+/// [`measure::BURST`] pings, one at a time, each waiting up to
+/// [`measure::PONG_TIMEOUT_MS`] for its answer, settled to the median. A
+/// pong carrying another ping's host time (a late answer to an earlier one)
+/// is not counted against this one, nor is one answering for another
+/// session.
+pub fn burst(
+    socket: &UdpSocket,
+    endpoint: SocketAddrV4,
+    session: SessionId,
+    clock: &HostClock,
+) -> Option<Micros> {
     socket.set_read_timeout(Some(Duration::from_millis(measure::PONG_TIMEOUT_MS))).ok()?;
     let mut samples = Vec::with_capacity(measure::BURST);
     let mut buf = [0u8; MAX_MESSAGE];
@@ -299,26 +306,26 @@ pub fn burst(socket: &UdpSocket, endpoint: SocketAddrV4, clock: &HostClock) -> O
             if echoed.is_some_and(|t| t != sent) {
                 continue; // an earlier ping's answer, arriving late
             }
-            samples.extend(measure::sample(reply, sent, received));
+            samples.extend(measure::sample(reply, session, sent, received));
             break;
         }
     }
     measure::settle(&mut samples)
 }
 
-/// Answer pings on `socket` with `ghost(host_now)` until `stop` — the
-/// measurement endpoint's loop, and the whole of it.
+/// Answer each datagram on `socket` with `answer(datagram, host_now)`, if
+/// it has one, until `stop` — the measurement endpoint's loop, and the
+/// whole of it.
 fn respond(
     socket: &UdpSocket,
     stop: &AtomicBool,
     clock: &HostClock,
-    ghost: impl Fn(Micros) -> Option<Micros>,
+    answer: impl Fn(&[u8], Micros) -> Option<Vec<u8>>,
 ) {
     let mut buf = [0u8; MAX_MESSAGE];
     while !stop.load(Ordering::Relaxed) {
         let Ok((len, from)) = socket.recv_from(&mut buf) else { continue };
-        let Some(ghost_now) = ghost(clock.now()) else { continue };
-        if let Some(reply) = measure::pong(&buf[..len], ghost_now) {
+        if let Some(reply) = answer(&buf[..len], clock.now()) {
             let _ = socket.send_to(&reply, from);
         }
     }
@@ -414,7 +421,9 @@ impl Link {
             let shared = Arc::clone(&shared);
             threads.push(thread::Builder::new().name("simply-link-responder".into()).spawn(
                 move || {
-                    respond(&responder, &shared.stop, &shared.clock, |h| shared.engine().ghost(h))
+                    respond(&responder, &shared.stop, &shared.clock, |ping, h| {
+                        shared.engine().pong(ping, h)
+                    })
                 },
             )?);
         }
@@ -486,6 +495,8 @@ impl Drop for Link {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const S: SessionId = NodeId(*b"session1");
 
     fn ip(s: &str) -> Ipv4Addr {
         s.parse().unwrap()
@@ -591,10 +602,12 @@ mod tests {
         let stop = Arc::new(AtomicBool::new(false));
         let thread = {
             let stop = Arc::clone(&stop);
-            thread::spawn(move || respond(&responder, &stop, &clock, |h| Some(h + 5_000_000)))
+            thread::spawn(move || {
+                respond(&responder, &stop, &clock, |ping, h| measure::pong(ping, S, h + 5_000_000))
+            })
         };
         let pinger = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
-        let intercept = burst(&pinger, endpoint, &clock);
+        let intercept = burst(&pinger, endpoint, S, &clock);
         stop.store(true, Ordering::Relaxed);
         thread.join().unwrap();
         let intercept = intercept.expect("the burst was answered");
@@ -612,10 +625,10 @@ mod tests {
         let stop = Arc::new(AtomicBool::new(false));
         let thread = {
             let stop = Arc::clone(&stop);
-            thread::spawn(move || respond(&responder, &stop, &clock, |_| None))
+            thread::spawn(move || respond(&responder, &stop, &clock, |_, _| None))
         };
         let pinger = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
-        assert_eq!(burst(&pinger, endpoint, &clock), None);
+        assert_eq!(burst(&pinger, endpoint, S, &clock), None);
         stop.store(true, Ordering::Relaxed);
         thread.join().unwrap();
     }

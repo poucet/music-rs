@@ -6,7 +6,8 @@
 //!   process-local epoch ([`crate::HostClock`]);
 //! * **ghost time** — the session's shared clock, in µs. Every peer maps
 //!   its host time onto it with a [`GhostXForm`] learned by measurement;
-//!   the founder's ghost time *is* its host time (Goltz 2018, §6);
+//!   the founder's runs at its host clock's rate from 0 at founding, so
+//!   ghost time reads as the session's age;
 //! * **beats** — musical time. A [`Timeline`] is a line through ghost time:
 //!   a tempo, and one point `(time_origin, beat_origin)` it passes through
 //!   (Goltz 2018, §4).

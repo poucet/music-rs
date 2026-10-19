@@ -234,6 +234,15 @@ impl Entry {
     }
 }
 
+/// The `sess` entry of a payload — a discovery message's session, or the
+/// session a pong answers for.
+fn session_of(entries: &[Entry]) -> Option<SessionId> {
+    entries.iter().find_map(|e| match e {
+        Entry::Session(s) => Some(*s),
+        _ => None,
+    })
+}
+
 fn encode_payload(entries: &[Entry], out: &mut Vec<u8>) {
     for e in entries {
         e.encode(out);
@@ -314,10 +323,7 @@ impl Discovery {
     }
 
     pub fn session(&self) -> Option<SessionId> {
-        self.entries.iter().find_map(|e| match e {
-            Entry::Session(s) => Some(*s),
-            _ => None,
-        })
+        session_of(&self.entries)
     }
 
     pub fn endpoint(&self) -> Option<SocketAddrV4> {
@@ -380,6 +386,11 @@ impl Measurement {
             k => return Err(WireError::Kind(k)),
         };
         Ok(Measurement { kind, entries: decode_payload(&b[MEASUREMENT_HEADER..])? })
+    }
+
+    /// The session a pong answers for.
+    pub fn session(&self) -> Option<SessionId> {
+        session_of(&self.entries)
     }
 
     pub fn ghost_time(&self) -> Option<i64> {

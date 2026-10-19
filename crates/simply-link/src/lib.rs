@@ -35,6 +35,8 @@
 pub mod clock;
 pub mod measure;
 mod net;
+#[cfg(test)]
+mod reference;
 pub mod session;
 pub mod timeline;
 pub mod wire;
