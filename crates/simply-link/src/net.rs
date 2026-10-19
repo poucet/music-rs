@@ -226,6 +226,13 @@ impl Shared {
         }
     }
 
+    /// Multicast a goodbye out of every interface.
+    fn goodbye(&self, bye: &[u8]) {
+        for i in self.interfaces() {
+            self.multicast(i.addr, bye);
+        }
+    }
+
     /// Re-read the machine's interfaces: join the group on the new ones,
     /// leave it on the ones that went away.
     fn rescan(&self) {
@@ -469,6 +476,24 @@ impl Link {
         self.shared.engine().peers()
     }
 
+    /// Found a session now at `bpm`, the beat now being `beat`, if this
+    /// peer is in none ([`Engine::found`]).
+    pub fn found(&self, bpm: f64, beat: f64) {
+        let now = self.shared.clock.now();
+        let actions = self.shared.engine().found(bpm, beat, now);
+        self.shared.perform(actions);
+    }
+
+    /// Leave the session, saying goodbye, and wait for the next one
+    /// ([`Engine::leave`]).
+    pub fn leave(&self) {
+        let now = self.shared.clock.now();
+        let bye = self.shared.engine().leave(now);
+        if let Some(bye) = bye {
+            self.shared.goodbye(&bye);
+        }
+    }
+
     /// Propose `bpm` from host time `at` on — shared with every peer.
     pub fn propose_tempo(&self, bpm: f64, at: Micros) {
         let now = self.shared.clock.now();
@@ -487,10 +512,9 @@ impl Link {
 impl Drop for Link {
     fn drop(&mut self) {
         self.shared.stop.store(true, Ordering::Relaxed);
-        if let Some(bye) = self.shared.engine().byebye() {
-            for i in self.shared.interfaces() {
-                self.shared.multicast(i.addr, &bye);
-            }
+        let bye = self.shared.engine().byebye();
+        if let Some(bye) = bye {
+            self.shared.goodbye(&bye);
         }
         for t in self.threads.drain(..) {
             let _ = t.join();

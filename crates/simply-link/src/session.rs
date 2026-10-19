@@ -22,9 +22,14 @@
 //!    member is adopted — a change relative to what that member announced
 //!    before, so an old announcement still in flight cannot undo a newer
 //!    change of ours. The start/stop state with the latest timestamp wins.
-//! 4. **Found** (optional — [`Config::found_after`]). A peer that has heard
-//!    no session for that long founds one: its session id is its node id,
-//!    and its ghost clock starts at 0 — a session's ghost time is its age.
+//! 4. **Found** (optional — [`Config::found_after`], or on demand with
+//!    [`Engine::found`]). A peer that has heard no session for that long
+//!    founds one: its session id is its node id, and its ghost clock
+//!    starts at 0 — a session's ghost time is its age. A peer that never
+//!    founds by itself is silent until it joins: no session of its own
+//!    exists for a later one to lose to, so the first session it hears
+//!    keeps its tempo and it follows. [`Engine::leave`] puts a peer back
+//!    there.
 //! 5. **Merge.** Two sessions meeting become one by the rule every
 //!    Ableton peer follows, so that all of them pick the same winner: a
 //!    joined peer measures each foreign session it has not yet decided
@@ -548,20 +553,49 @@ impl Engine {
                     .found_after
                     .is_some_and(|after| now - self.searching_since >= after)
                 {
-                    self.session = self.node;
-                    self.founder = true;
-                    // Ghost time starts at 0 as the session does, as an
-                    // Ableton peer's does, so it reads as the session's age
-                    // — what rule 5 compares.
-                    self.xform = GhostXForm { intercept: -now };
-                    self.timeline = Timeline::at(self.config.bpm, 0.0, 0);
-                    self.status = Status::Joined;
-                    out.push(self.announce(now));
+                    out.extend(self.found(self.config.bpm, 0.0, now));
                 }
             }
             Status::Measuring => {}
         }
         out
+    }
+
+    /// Found a session now (rule 4, on demand): at `bpm`, with the beat at
+    /// `now` being `beat` — so a peer that kept a beat of its own while it
+    /// waited carries it into the session without a jump. Ignored while in
+    /// a session. A measurement still running goes on; if its session
+    /// turns out the older, rule 5 moves us into it.
+    pub fn found(&mut self, bpm: f64, beat: f64, now: Micros) -> Vec<Action> {
+        if self.status == Status::Joined {
+            return Vec::new();
+        }
+        self.session = self.node;
+        self.founder = true;
+        // Ghost time starts at 0 as the session does, as an Ableton peer's
+        // does, so it reads as the session's age — what rule 5 compares.
+        self.xform = GhostXForm { intercept: -now };
+        self.timeline = Timeline::at(bpm, beat, 0);
+        self.status = Status::Joined;
+        vec![self.announce(now)]
+    }
+
+    /// Leave the session and listen again, as a peer that has joined
+    /// none: no more announcements, no pongs, and the next session heard
+    /// is joined (rule 2) — as a newcomer, so it is that session's tempo
+    /// that holds. Returns the `ByeBye` to multicast; `None` (and nothing
+    /// changes) if we were in no session.
+    pub fn leave(&mut self, now: Micros) -> Option<Vec<u8>> {
+        let bye = self.byebye()?;
+        self.status = Status::Searching;
+        self.session = self.node;
+        self.founder = false;
+        self.xform = GhostXForm::default();
+        self.start_stop = None;
+        self.outranked.clear();
+        self.last_announce = None;
+        self.searching_since = now;
+        Some(bye)
     }
 
     /// Propose a new tempo from host time `at` on. Ignored until joined.
@@ -889,6 +923,70 @@ mod tests {
         assert_eq!(theirs.session, other);
         founder.tick(2_000_000 + 5_000_001);
         assert!(founder.peers().iter().all(|p| p.node != JOINER), "forgotten");
+    }
+
+    /// Founding on demand: a follower that never founds by itself can be
+    /// told to, at a tempo and a beat of its choosing, and is then a
+    /// founder like any other — joinable, with its ghost clock at 0.
+    #[test]
+    fn a_follower_founds_on_demand_keeping_its_beat() {
+        let mut e = Engine::new(FOUNDER, Config::default(), 0);
+        e.set_endpoint("10.0.0.1:4000".parse().unwrap());
+        assert!(e.tick(5_000_000).is_empty(), "a follower does not found by itself");
+        let said = e.found(97.0, 12.5, 6_000_000);
+        assert!(matches!(said.as_slice(), [Action::Broadcast(_)]));
+        let s = e.state();
+        assert!(s.joined() && s.founder && s.session == Some(FOUNDER));
+        assert!((s.tempo() - 97.0).abs() < 1e-3);
+        assert!((s.beat_at(6_000_000) - 12.5).abs() < 1e-6, "the beat carries on");
+        assert_eq!(e.ghost(6_000_000), Some(0), "a new session: its age is 0");
+        assert!(e.found(140.0, 0.0, 7_000_000).is_empty(), "already in one");
+        // And it is joined like a session founded by the clock.
+        let mut joiner = Engine::new(JOINER, Config::default(), 0);
+        let m = deliver(&said, &mut joiner, 1, 6_100_000);
+        assert!(matches!(m.as_slice(), [Action::Measure { .. }]));
+    }
+
+    /// Leaving: a ByeBye goes out, the peer is silent and searching again
+    /// — and the next session it hears it joins as a newcomer, at that
+    /// session's tempo, without that session measuring anything.
+    #[test]
+    fn a_peer_that_leaves_waits_and_then_joins_the_next_session() {
+        let (mut founder, mut joiner) = joined_pair();
+        let bye = joiner.leave(2_000_000).expect("was in a session");
+        assert_eq!(Discovery::decode(&bye).unwrap().kind, DiscoveryKind::ByeBye);
+        founder.on_discovery(addr(2), &Discovery::decode(&bye).unwrap(), 2_000_000);
+        assert_eq!(founder.state().peers, 0, "the session saw it go");
+        assert_eq!(joiner.state().status, Status::Searching);
+        assert_eq!(joiner.ghost(2_000_000), None, "no pongs while waiting");
+        assert!(joiner.leave(2_000_001).is_none(), "nothing to leave");
+        assert!(joiner.byebye().is_none());
+        // Waiting: it says nothing, however long — and does not found.
+        joiner.peers.clear();
+        for t in (2_000_000..12_000_000).step_by(250_000) {
+            assert!(joiner.tick(t).iter().all(|a| !matches!(a, Action::Broadcast(_))));
+        }
+        // A session at 126 BPM appears: it is joined, at 126.
+        let mut other = Engine::new(NodeId(*b"session2"), founding(), 11_000_000);
+        other.set_endpoint("10.0.0.3:4002".parse().unwrap());
+        let says = other.tick(12_000_000);
+        other.propose_tempo(126.0, 12_000_000, 12_000_000);
+        let says2 = other.tick(12_300_000);
+        let m = deliver(&says, &mut joiner, 3, 12_000_000);
+        assert!(matches!(m.as_slice(), [Action::Measure { .. }]), "{m:?}");
+        deliver(&says2, &mut joiner, 3, 12_300_000);
+        let back = joiner.on_measured(
+            other.node(),
+            measure_burst(&other, other.node(), 0, 12_300_000),
+            12_400_000,
+        );
+        let s = joiner.state();
+        assert_eq!(s.session, Some(other.node()));
+        assert!((s.tempo() - 126.0).abs() < 1e-3, "{}", s.tempo());
+        // The session hears a member, not a rival: nothing to measure.
+        let theirs = deliver(&back, &mut other, 2, 12_400_000);
+        assert!(theirs.iter().all(|a| !matches!(a, Action::Measure { .. })), "{theirs:?}");
+        assert!((other.state().tempo() - 126.0).abs() < 1e-3);
     }
 
     #[test]

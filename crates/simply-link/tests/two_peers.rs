@@ -153,3 +153,47 @@ fn a_late_founding_peer_joins_and_follows_every_tempo_change() {
         wait_for("the change to reach the hub", || (hub.state().tempo() - bpm).abs() < 1e-3);
     }
 }
+
+/// A Link app alone at 126 BPM (an Ableton peer founds the moment Link is
+/// on — here, after 200 ms of hearing nobody), and a peer that only ever
+/// follows: started after the app, or waiting before it. Either way the
+/// follower ends in the app's session at 126, and the app's tempo never
+/// moves. Then the follower leaves and waits again — and, the app still
+/// being there, joins it again, still at the app's tempo.
+#[test]
+fn a_follower_joins_a_lone_app_at_its_tempo_whether_it_came_first_or_not() {
+    for follower_first in [false, true] {
+        let net = private_network();
+        let follow = Config { bpm: 120.0, ..Config::default() };
+        let app_config = Config { found_after: Some(200_000), bpm: 126.0, ..Config::default() };
+        let (app, hub);
+        if follower_first {
+            hub = Link::join_on(follow, net).expect("hub");
+            thread::sleep(Duration::from_millis(600));
+            assert!(!hub.state().joined(), "waiting: no session of its own");
+            app = Link::join_on(app_config, net).expect("app");
+        } else {
+            app = Link::join_on(app_config, net).expect("app");
+            wait_for("the app to found", || app.state().joined());
+            hub = Link::join_on(follow, net).expect("hub");
+        }
+        wait_for("the hub to join", || hub.state().joined());
+        let app_session = app.state().session;
+        assert_eq!(hub.state().session, app_session, "follower_first {follower_first}");
+        assert!((hub.state().tempo() - 126.0).abs() < 1e-3);
+        wait_for("each to see the other", || app.state().peers == 1 && hub.state().peers == 1);
+        assert_eq!(app.state().session, app_session, "the app never moved");
+        assert!((app.state().tempo() - 126.0).abs() < 1e-3, "nor did its tempo");
+        let peers = hub.peers();
+        assert_eq!(peers.len(), 1);
+        assert!(peers[0].in_session && (peers[0].timeline.bpm() - 126.0).abs() < 1e-3);
+
+        // Leaving, the hub waits — and as the app is still announcing, it
+        // joins it again at once (the goodbye itself is a unit test: here
+        // the rejoin outruns any look at the app's peer count).
+        hub.leave();
+        wait_for("the hub to rejoin", || hub.state().joined());
+        assert_eq!(hub.state().session, app_session);
+        assert!((app.state().tempo() - 126.0).abs() < 1e-3);
+    }
+}

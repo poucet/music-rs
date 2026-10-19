@@ -303,6 +303,46 @@ mod tests {
         }
     }
 
+    /// The fix for bug 1, from the hub's side: a hub that only ever
+    /// follows (no `found_after`) is silent while it waits, however long,
+    /// so a DJ switching Link on after it is alone in the room, keeps its
+    /// own session and tempo, and the hub joins it as the newcomer — the
+    /// DJ measures nothing and changes nothing. Told to found (the
+    /// console's Start session), the hub's session is the room's, as any
+    /// running session is to a newcomer.
+    #[test]
+    fn a_waiting_hub_joins_a_dj_who_switches_link_on_later_at_the_djs_tempo() {
+        for (hub_id, dj_id) in [(HUB, DJ), (DJ, HUB)] {
+            let mut e = Engine::new(hub_id, Config::default(), 0);
+            e.set_endpoint("10.0.0.1:4000".parse().unwrap());
+            let mut room = Room::new(e, 0);
+            room.run(60_000_000);
+            assert_eq!(room.hub.state().status, Status::Searching, "waiting, not founding");
+            room.dj = Some(RealLink::enable(dj_id, 126.0, room.now, 3_000_000));
+            room.run(3_000_000);
+            assert!(in_one_session(&room), "{hub_id} / {dj_id}: never met");
+            let dj = room.dj.as_ref().unwrap();
+            assert_eq!(dj.session, dj_id, "the DJ's session holds");
+            assert!((dj.timeline.bpm() - 126.0).abs() < 1e-3, "the DJ's tempo never changes");
+            assert_eq!(dj.measured, 0, "the DJ never even had a rival to measure");
+            assert!((room.hub.state().tempo() - 126.0).abs() < 1e-3, "the hub runs at 126");
+            assert!(!room.hub.state().founder);
+        }
+        // Started on demand: the hub's session, and its tempo, are the room's.
+        let mut e = Engine::new(HUB, Config::default(), 0);
+        e.set_endpoint("10.0.0.1:4000".parse().unwrap());
+        let mut room = Room::new(e, 0);
+        room.run(2_000_000);
+        let started = room.hub.found(110.0, 0.0, room.now);
+        assert_eq!(started.len(), 1);
+        room.run(10_000_000);
+        room.dj = Some(RealLink::enable(DJ, 126.0, room.now, 0));
+        room.run(3_000_000);
+        assert!(in_one_session(&room));
+        assert_eq!(room.dj.as_ref().unwrap().session, HUB);
+        assert!((room.dj.as_ref().unwrap().timeline.bpm() - 110.0).abs() < 1e-3);
+    }
+
     /// The race behind the deadlock: the hub and the DJ each measure the
     /// other's session at the same moment. Whatever the order, both must
     /// end in the same one.
