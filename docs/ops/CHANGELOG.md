@@ -5,6 +5,27 @@ format is stated once in AGENTS.md §2.
 
 ## Unreleased
 
+#### `simply-link` meets Ableton's peers properly: pongs name their session, the older session wins (`LINK-JOIN`) · 2026-10-19 19:50 · rpqxqswk
+
+- **Fixed: no Ableton peer could join a session through ours.** A pong now
+  carries the responder's session (`sess`). Ableton's Link drops any pong
+  that does not name the session it is measuring, so djay, Live or a
+  TouchDesigner Link CHOP switched on after one of our founders stayed in a
+  session of its own. `measure::pong`, `measure::sample` and `burst` now take
+  the session, and a pong for another session is not a sample.
+- **Changed: two sessions meeting merge by Link's own rule.** Every joined
+  peer measures each foreign session it has not decided on, and the older
+  session wins (ghost time ahead by more than 0.5 s, or within that margin
+  the id that sorts first). The old rule — a lone founder yielding to a
+  smaller id — could leave the two sides each waiting for the other.
+- **Changed: a founder's ghost clock starts at 0** when it founds, as an
+  Ableton peer's does, so ghost time reads as the session's age.
+- Tests: a model of an Ableton peer (`src/reference.rs`) in a room with the
+  engine — a DJ switching Link on after a founder, a founder started after a
+  DJ, and both measuring each other at once, in both id orders; the first
+  fails on the old code. Socket tests: a founder measured the way an Ableton
+  peer measures it, and a late founding peer following three tempo changes.
+
 #### `link-midi` exits quietly when its reader hangs up · 2026-10-16 05:02 · xswwsutm
 
 - `link-midi listen | head` (and `session`, `ports`, `run --dry-run`) panicked
