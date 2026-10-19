@@ -5,6 +5,8 @@ format is stated once in AGENTS.md §2.
 
 ## Unreleased
 
+## 1.0.0 — 2026-10-19
+
 #### The Link-to-MIDI-clock binary is `simply-link` · 2026-10-19 23:29 · tmokkqxz
 
 - **Renamed: `link-midi` → `simply-link`**, matching `simply-osc`. Same
