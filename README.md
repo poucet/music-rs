@@ -1,5 +1,7 @@
 # music-rs
 
+> music-rs is a [simply.audio lab](http://simply.audio) project.
+
 Canonical musical definitions, performance sequencing models, and tool contracts shared across the Simply audio ecosystem (including [Nexus](https://github.com/poucet/nexus) and Flux).
 
 ## Overview
