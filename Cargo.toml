@@ -29,7 +29,7 @@ socket2 = { version = "0.6.5", features = ["all"] }
 # if-addrs: the machine's interfaces — simply-link joins and announces the
 # multicast group on each.
 if-addrs = "0.15"
-# ctrlc: link-midi's Ctrl-C — stop the follower and leave the session
+# ctrlc: simply-link's Ctrl-C — stop the follower and leave the session
 # instead of cutting both off mid-run.
 ctrlc = "3"
 

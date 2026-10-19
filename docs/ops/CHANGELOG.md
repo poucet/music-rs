@@ -5,6 +5,13 @@ format is stated once in AGENTS.md §2.
 
 ## Unreleased
 
+#### The Link-to-MIDI-clock binary is `simply-link` · 2026-10-19 23:29 · tmokkqxz
+
+- **Renamed: `link-midi` → `simply-link`**, matching `simply-osc`. Same
+  commands (`ports`, `session`, `listen`, `run`); `./install simply-link`
+  installs it. The crate is still `simply-link-midi`. Reinstall and delete
+  any old `link-midi` from your path.
+
 #### `./install` puts the binaries on your machine (`MUSIC-INSTALL`) · 2026-10-19 23:22 · ymwqyukp
 
 - **Added: `./install` at the repo root.** It builds every binary in the

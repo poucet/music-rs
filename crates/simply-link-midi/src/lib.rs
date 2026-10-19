@@ -1,5 +1,5 @@
 //! An Ableton Link session out as MIDI beat clock — the logic of the
-//! `link-midi` bridge, with no sockets and no MIDI port in it, so it can be
+//! `simply-link` bridge, with no sockets and no MIDI port in it, so it can be
 //! run against a fake session and a fake sink.
 //!
 //! What a follower is sent, and when:

@@ -1,4 +1,4 @@
-//! `link-midi` — an Ableton Link session out as MIDI beat clock, for a
+//! `simply-link` — an Ableton Link session out as MIDI beat clock, for a
 //! drum machine, a modular's MIDI→clock interface, anything that follows
 //! `F8`. Every word of timing logic is in the library; this file parses
 //! arguments, opens the port and prints.
@@ -15,7 +15,7 @@ use simply_link::{Config, Link, Network, SessionState, Status, discovery_listene
 use simply_link_midi::{ClockEvent, Schedule, Settings, Sink, Transport, run};
 use simply_midi_clock::{MidiOutputConnection, open_output, output_port_names};
 
-/// `println!`, but a reader that hung up (`link-midi listen | head`) ends
+/// `println!`, but a reader that hung up (`simply-link listen | head`) ends
 /// the program quietly with status 0 instead of panicking on a broken pipe.
 macro_rules! out {
     ($($arg:tt)*) => {{
@@ -24,23 +24,23 @@ macro_rules! out {
             if e.kind() == std::io::ErrorKind::BrokenPipe {
                 std::process::exit(0);
             }
-            eprintln!("link-midi: cannot write to stdout: {e}");
+            eprintln!("simply-link: cannot write to stdout: {e}");
             std::process::exit(1);
         }
     }};
 }
 
 /// The name this program registers with the MIDI system.
-const CLIENT: &str = "link-midi";
+const CLIENT: &str = "simply-link";
 
 const USAGE: &str = "\
-link-midi — an Ableton Link session out as MIDI beat clock
+simply-link — an Ableton Link session out as MIDI beat clock
 
 USAGE
-  link-midi ports   [--json]
-  link-midi session [--seconds N] [--json]
-  link-midi listen  [--seconds N] [--json]
-  link-midi run     --port NAME [--quantum BEATS] [--latency-ms MS]
+  simply-link ports   [--json]
+  simply-link session [--seconds N] [--json]
+  simply-link listen  [--seconds N] [--json]
+  simply-link run     --port NAME [--quantum BEATS] [--latency-ms MS]
                     [--transport sync|free] [--dry-run]
 
 COMMANDS
@@ -124,7 +124,7 @@ fn parse(args: &[String]) -> Result<Command, String> {
         Some("listen") => Ok(Command::Listen { seconds, json }),
         Some("run") => {
             if port.is_none() && !dry_run {
-                return Err("run needs --port NAME (see `link-midi ports`), or --dry-run".into());
+                return Err("run needs --port NAME (see `simply-link ports`), or --dry-run".into());
             }
             Ok(Command::Run { port, settings, dry_run })
         }
@@ -278,7 +278,7 @@ fn run_bridge(port: Option<String>, settings: Settings, dry_run: bool) -> Result
     let clock = link.clock();
     let mut schedule = Schedule::new(settings);
     eprintln!(
-        "link-midi: quantum {} · latency {} ms · transport {:?} — waiting for a Link session (Ctrl-C to stop)",
+        "simply-link: quantum {} · latency {} ms · transport {:?} — waiting for a Link session (Ctrl-C to stop)",
         settings.quantum,
         settings.latency as f64 / 1000.0,
         settings.transport
@@ -290,11 +290,11 @@ fn run_bridge(port: Option<String>, settings: Settings, dry_run: bool) -> Result
     } else {
         let port = port.expect("checked in parse");
         let connection = open_output(CLIENT, &port)?;
-        eprintln!("link-midi: clock → {port}");
+        eprintln!("simply-link: clock → {port}");
         let mut sink = Port(connection);
         run(session, clock, &mut schedule, &mut sink, &stop);
     }
-    eprintln!("link-midi: stopped");
+    eprintln!("simply-link: stopped");
     Ok(())
 }
 
@@ -326,7 +326,7 @@ fn main() -> ExitCode {
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(message) => {
-            eprintln!("link-midi: {message}");
+            eprintln!("simply-link: {message}");
             ExitCode::FAILURE
         }
     }

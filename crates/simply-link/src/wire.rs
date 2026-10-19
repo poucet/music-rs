@@ -22,7 +22,7 @@
 //! against those exact bytes. The `stst` entry and the measurement
 //! messages are **not** in any public dump found; their layout here is
 //! this crate's and is the part a packet capture against a real peer must
-//! confirm (`link-midi listen --json` prints announcements raw; the
+//! confirm (`simply-link listen --json` prints announcements raw; the
 //! measurement exchange needs a packet capture — see the guide). One
 //! measurement rule is known from how Ableton peers behave, and was missed
 //! once: a pong names the responder's session (`sess`), and a pong that

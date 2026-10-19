@@ -2,7 +2,7 @@
 # install — build this workspace's binaries in release and put them on disk.
 #
 #   ./install                     build + install every binary into ~/.local/bin
-#   ./install link-midi           just the named binaries
+#   ./install simply-link           just the named binaries
 #   ./install --prefix DIR ...    install into DIR/bin instead (or PREFIX=DIR)
 #   ./install --list              print the binaries this workspace builds
 #   ./install --uninstall [BIN…]  remove them from the prefix again

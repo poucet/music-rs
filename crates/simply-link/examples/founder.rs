@@ -1,5 +1,5 @@
 //! A Link peer that founds a session on one interface and walks its tempo —
-//! the "other machine" for proving `link-midi` follows a peer over a LAN
+//! the "other machine" for proving `simply-link` follows a peer over a LAN
 //! address rather than loopback, when only one machine is to hand.
 //!
 //!     cargo run -p simply-link --example founder -- 192.168.1.20 100 110 120

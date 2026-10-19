@@ -1,13 +1,13 @@
 [package]
 name = "simply-link-midi"
-description = "link-midi: an Ableton Link session out as MIDI beat clock, phase-aligned to the session's quantum"
+description = "simply-link: an Ableton Link session out as MIDI beat clock, phase-aligned to the session's quantum"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [[bin]]
-name = "link-midi"
-path = "src/bin/link-midi.rs"
+name = "simply-link"
+path = "src/bin/simply-link.rs"
 
 [dependencies]
 simply-link.workspace = true

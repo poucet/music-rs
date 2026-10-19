@@ -15,13 +15,13 @@ Canonical musical definitions, performance sequencing models, and tool contracts
 | [`simply-link`](crates/simply-link) | Ableton Link — an independent implementation of the protocol: peer discovery, the shared timeline, ghost-time measurement, quantum, and start/stop sync. |
 | [`simply-midi`](crates/simply-midi) | MIDI 1.0 channel-voice decoding, and midir device input behind the `device` feature. |
 | [`simply-midi-clock`](crates/simply-midi-clock) | MIDI beat clock out: the real-time messages, the follower's position, sleep-then-spin pacing, and output-port selection. |
-| [`simply-link-midi`](crates/simply-link-midi) | The `link-midi` binary — an Ableton Link session out as MIDI beat clock, phase-aligned to the session's quantum. |
+| [`simply-link-midi`](crates/simply-link-midi) | The `simply-link` binary — an Ableton Link session out as MIDI beat clock, phase-aligned to the session's quantum. |
 
 ## Binaries
 
 | Binary | What it does | Run |
 | --- | --- | --- |
-| `link-midi` | Joins the Ableton Link session on your network and sends MIDI beat clock to one output port, in time and in phase — a drum machine's bar one lands on the session's downbeat. Follows only; never changes the tempo or the transport. | `cargo run -p simply-link-midi -- run --port NAME` (or `cargo install --path crates/simply-link-midi`) |
+| `simply-link` | Joins the Ableton Link session on your network and sends MIDI beat clock to one output port, in time and in phase — a drum machine's bar one lands on the session's downbeat. Follows only; never changes the tempo or the transport. | `cargo run -p simply-link-midi -- run --port NAME` (or `cargo install --path crates/simply-link-midi`) |
 | `simply-osc` | Sends one OSC message over UDP from the command line — types inferred, `i:`/`f:`/`s:` prefixes to force one. The by-hand half of `simply-osc`; the library receives. | `cargo run -p simply-osc -- /address 0.5` (or `cargo install --path crates/simply-osc`) |
 
 Each crate's own README carries the details: [`simply-link-midi`](crates/simply-link-midi/README.md), [`simply-osc`](crates/simply-osc/README.md).
@@ -32,7 +32,7 @@ Each crate's own README carries the details: [`simply-link-midi`](crates/simply-
 
 ```sh
 ./install                        # all of them, into ~/.local/bin
-./install link-midi              # just the ones named
+./install simply-link            # just the ones named
 ./install --prefix /opt/simply   # into /opt/simply/bin instead (or PREFIX=/opt/simply)
 ./install --list                 # what the workspace builds
 ./install --uninstall            # remove them again (names and --prefix work here too)
