@@ -388,7 +388,11 @@ impl Engine {
         if self.measuring.is_some_and(|(s, _)| s == session) {
             self.measuring = None;
         }
-        self.measured_at = now;
+        if session == self.session {
+            // A comparison with a foreign session does not put off the
+            // next re-measurement of our own.
+            self.measured_at = now;
+        }
         let Some(intercept) = intercept else {
             self.no_retry_before = now + self.config.retry_after;
             if self.status == Status::Measuring {
@@ -430,6 +434,7 @@ impl Engine {
         self.timeline = timeline;
         self.start_stop = start_stop;
         self.xform = GhostXForm { intercept };
+        self.measured_at = now;
         self.founder = false;
         self.status = Status::Joined;
         vec![self.announce(now)]
@@ -627,7 +632,8 @@ mod tests {
         let mut joiner = Engine::new(JOINER, Config::default(), 0);
         deliver(&announced, &mut joiner, 1, 1_100_000);
         // The joiner announces as it joins; the founder hears it and answers.
-        let answer = joiner.on_measured(FOUNDER, measure_burst(&founder, FOUNDER, 0, 1_100_000), 1_500_000);
+        let answer =
+            joiner.on_measured(FOUNDER, measure_burst(&founder, FOUNDER, 0, 1_100_000), 1_500_000);
         let back = deliver(&answer, &mut founder, 2, 1_500_000);
         assert!(matches!(back.as_slice(), [Action::Send(..)]), "{back:?}");
         assert_eq!(founder.state().peers, 1);

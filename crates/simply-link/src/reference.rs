@@ -2,9 +2,10 @@
 //! TouchDesigner Link CHOP — just far enough to put this crate's
 //! [`Engine`] in a room with one, with no sockets.
 //!
-//! What the model does, and where each rule comes from (Ableton's
-//! `Sessions.hpp`, `Measurement.hpp`, `PingResponder.hpp`, `Controller.hpp`
-//! — read for behaviour, nothing copied):
+//! What the model does — Ableton Link's behaviour as its public source
+//! (`Sessions.hpp`, `Measurement.hpp`, `PingResponder.hpp`,
+//! `Controller.hpp`) describes it; the model is written from that
+//! description, nothing copied:
 //!
 //! * **Enabling Link starts a fresh session**: the peer's own node id, its
 //!   ghost clock reset to 0 ("to avoid hijacking tempo in existing
@@ -28,7 +29,9 @@ use std::net::{SocketAddr, SocketAddrV4};
 use crate::measure;
 use crate::session::{Action, Engine};
 use crate::timeline::{MICROBEATS, Micros, Timeline};
-use crate::wire::{Discovery, DiscoveryKind, Entry, Measurement, MeasurementKind, NodeId, SessionId};
+use crate::wire::{
+    Discovery, DiscoveryKind, Entry, Measurement, MeasurementKind, NodeId, SessionId,
+};
 
 /// Session ghost times closer than this are a tie, settled by id.
 const SESSION_EPS: Micros = 500_000;
@@ -243,7 +246,8 @@ mod tests {
     const DJ: NodeId = NodeId(*b"zzzzdjay");
 
     fn hub(node: NodeId, now: Micros) -> Engine {
-        let mut e = Engine::new(node, Config { found_after: Some(1_000_000), ..Config::default() }, now);
+        let mut e =
+            Engine::new(node, Config { found_after: Some(1_000_000), ..Config::default() }, now);
         e.set_endpoint("10.0.0.1:4000".parse().unwrap());
         e
     }

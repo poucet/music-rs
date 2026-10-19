@@ -91,3 +91,65 @@ fn a_peer_on_every_interface_joins_an_app_that_is_only_on_loopback() {
     let b = ours.state().beat_at(ours.clock().micros(at));
     assert!((a - b).abs() < 123.0 / 60.0 * 0.001, "{a} vs {b}");
 }
+
+/// What an Ableton peer does to measure a session through one of ours:
+/// hear its announcement, ping the `mep4` it gave, and count only pongs
+/// that name the session it announced. Ours left the session out of its
+/// pongs, so no Ableton peer (djay, Live, a TouchDesigner Link CHOP) could
+/// ever join a session through it — the defect behind a DJ switching Link
+/// on after the hub and the two never meeting.
+#[test]
+fn a_founded_session_can_be_measured_the_way_an_ableton_peer_measures_it() {
+    let net = private_network();
+    let founder =
+        Link::join_on(Config { found_after: Some(200_000), ..Config::default() }, net).unwrap();
+    wait_for("the founder to found", || founder.state().joined());
+    let session = founder.state().session.unwrap();
+    let (listener, _) = simply_link::discovery_listener(&net).unwrap();
+    let mut buf = [0u8; 512];
+    let until = Instant::now() + Duration::from_secs(5);
+    let endpoint = loop {
+        assert!(Instant::now() < until, "no announcement heard");
+        let Ok((len, _)) = listener.recv_from(&mut buf) else { continue };
+        let msg = simply_link::wire::Discovery::decode(&buf[..len]).unwrap();
+        if msg.node == founder.node() {
+            assert_eq!(msg.session(), Some(session));
+            break msg.endpoint().expect("a measurement endpoint");
+        }
+    };
+    let clock = simply_link::HostClock::new();
+    let pinger = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    assert!(simply_link::burst(&pinger, endpoint, session, &clock).is_some(), "measured");
+    let elsewhere = simply_link::NodeId(*b"nobody!!");
+    assert_eq!(
+        simply_link::burst(&pinger, endpoint, elsewhere, &clock),
+        None,
+        "for its session only"
+    );
+}
+
+/// The hub's case: a peer that would found on its own (`found_after`)
+/// starts after a session exists, joins it at that session's tempo — and
+/// keeps following every change after.
+#[test]
+fn a_late_founding_peer_joins_and_follows_every_tempo_change() {
+    let net = private_network();
+    let first =
+        Link::join_on(Config { found_after: Some(200_000), bpm: 98.0, ..Config::default() }, net)
+            .unwrap();
+    wait_for("the first to found", || first.state().joined());
+    thread::sleep(Duration::from_millis(600));
+    let hub = Link::join_on(
+        Config { found_after: Some(1_000_000), bpm: 120.0, ..Config::default() },
+        net,
+    )
+    .unwrap();
+    wait_for("the hub to join", || hub.state().joined() && hub.state().peers == 1);
+    assert_eq!(hub.state().session, first.state().session);
+    assert!(!hub.state().founder, "joined, not founded");
+    assert!((hub.state().tempo() - 98.0).abs() < 1e-3);
+    for bpm in [101.5, 87.0, 140.0] {
+        first.propose_tempo(bpm, first.clock().now());
+        wait_for("the change to reach the hub", || (hub.state().tempo() - bpm).abs() < 1e-3);
+    }
+}

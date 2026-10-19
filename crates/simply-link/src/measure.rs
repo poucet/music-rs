@@ -20,8 +20,6 @@
 
 use crate::timeline::Micros;
 use crate::wire::{Entry, Measurement, MeasurementKind, SessionId};
-#[cfg(test)]
-use crate::wire::NodeId;
 
 /// Pings in one burst.
 pub const BURST: usize = 20;
@@ -95,6 +93,7 @@ pub fn settle(samples: &mut [Micros]) -> Option<Micros> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::wire::NodeId;
 
     const S: SessionId = NodeId(*b"session1");
 

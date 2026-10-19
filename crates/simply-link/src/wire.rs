@@ -23,7 +23,10 @@
 //! messages are **not** in any public dump found; their layout here is
 //! this crate's and is the part a packet capture against a real peer must
 //! confirm (`link-midi listen --json` prints announcements raw; the
-//! measurement exchange needs a packet capture — see the guide).
+//! measurement exchange needs a packet capture — see the guide). One
+//! measurement rule is known from how Ableton peers behave, and was missed
+//! once: a pong names the responder's session (`sess`), and a pong that
+//! does not name the session being measured fails the measurement.
 
 use std::net::{Ipv4Addr, SocketAddrV4};
 
