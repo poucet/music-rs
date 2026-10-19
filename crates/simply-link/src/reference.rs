@@ -179,11 +179,14 @@ pub struct Room {
     pub hub: Engine,
     pub dj: Option<RealLink>,
     pub now: Micros,
+    /// Every message the hub sent, with the dj's tempo just after hearing
+    /// it — for asserting on what the hub ever said.
+    pub said: Vec<(Discovery, Option<f64>)>,
 }
 
 impl Room {
     pub fn new(hub: Engine, now: Micros) -> Self {
-        Room { hub, dj: None, now }
+        Room { hub, dj: None, now, said: Vec::new() }
     }
 
     /// Run for `for_us`: the hub ticks every 20 ms, both sides hear each
@@ -216,6 +219,8 @@ impl Room {
                     if let Some(dj) = self.dj.as_mut() {
                         dj.hear(&m, &self.hub, self.now);
                     }
+                    let dj_bpm = self.dj.as_ref().map(|dj| dj.timeline.bpm());
+                    self.said.push((m, dj_bpm));
                 }
                 Action::Measure { session, .. } => {
                     let intercept = self.dj.as_ref().and_then(|dj| {
@@ -341,6 +346,38 @@ mod tests {
         assert!(in_one_session(&room));
         assert_eq!(room.dj.as_ref().unwrap().session, HUB);
         assert!((room.dj.as_ref().unwrap().timeline.bpm() - 110.0).abs() < 1e-3);
+    }
+
+    /// LINK-ADOPT, word for word what Chris did: the hub waits a minute
+    /// with a private 120; djay, mid-track at 126, switches Link on — a
+    /// fresh session whose beat origin carries on the track's beat, as
+    /// Link's reset on enable does. Everything the hub ever says carries
+    /// the DJ's session and the DJ's timeline exactly (so Link's
+    /// newer-beat-origin rule has nothing to adopt), and the DJ is at 126
+    /// after every message it hears.
+    #[test]
+    fn a_joining_hub_only_ever_announces_the_timeline_it_adopted() {
+        for (hub_id, dj_id) in [(HUB, DJ), (DJ, HUB)] {
+            let mut e = Engine::new(hub_id, Config::default(), 0);
+            e.set_endpoint("10.0.0.1:4000".parse().unwrap());
+            let mut room = Room::new(e, 0);
+            room.run(60_000_000);
+            assert!(room.said.is_empty(), "waiting: silent");
+            let mut dj = RealLink::enable(dj_id, 126.0, room.now, 3_000_000);
+            dj.timeline = Timeline::at(126.0, 1234.567, 0);
+            let theirs = dj.timeline;
+            room.dj = Some(dj);
+            room.run(3_000_000);
+            assert!(in_one_session(&room), "{hub_id} / {dj_id}: never met");
+            assert!(!room.said.is_empty());
+            for (m, dj_bpm) in &room.said {
+                assert_eq!(m.session(), Some(dj_id), "{m:?}");
+                assert_eq!(m.timeline(), Some(theirs), "only the adopted timeline");
+                assert_eq!(*dj_bpm, Some(theirs.bpm()));
+            }
+            assert_eq!(room.dj.as_ref().unwrap().timeline, theirs, "the DJ never changes");
+            assert_eq!(room.hub.state().timeline, theirs);
+        }
     }
 
     /// The race behind the deadlock: the hub and the DJ each measure the
