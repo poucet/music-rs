@@ -41,7 +41,7 @@ use socket2::{Domain, Protocol, SockRef, Socket, Type};
 
 use crate::clock::HostClock;
 use crate::measure;
-use crate::session::{Action, Config, Engine, SessionState};
+use crate::session::{Action, Config, Engine, PeerInfo, SessionState};
 use crate::timeline::Micros;
 use crate::wire::{Discovery, GROUP, MAX_MESSAGE, NodeId, PORT, SessionId};
 
@@ -461,6 +461,12 @@ impl Link {
     /// "host time of beat b" without holding any lock.
     pub fn state(&self) -> SessionState {
         self.shared.engine().state()
+    }
+
+    /// Every peer this one hears right now, in node-id order — a copy,
+    /// taken under the engine's lock and released at once.
+    pub fn peers(&self) -> Vec<PeerInfo> {
+        self.shared.engine().peers()
     }
 
     /// Propose `bpm` from host time `at` on — shared with every peer.

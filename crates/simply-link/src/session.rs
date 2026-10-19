@@ -113,6 +113,8 @@ struct Peer {
     /// it came over, so they are kept apart rather than overwriting each
     /// other.
     endpoints: Vec<Heard>,
+    /// Host µs the peer was last heard from.
+    heard: Micros,
     /// Host µs after which the peer is forgotten.
     expires: Micros,
 }
@@ -135,6 +137,33 @@ impl Peer {
             .max_by_key(|h| (h.endpoint.ip().is_loopback(), h.expires))
             .map(|h| h.endpoint)
     }
+}
+
+/// One peer this one hears, as a plain copy — for a display ("who is
+/// out there"), not for any rule. Link's messages carry no application
+/// name: what a peer is known by is its node id and where it is heard from.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PeerInfo {
+    pub node: NodeId,
+    /// The session the peer announces.
+    pub session: SessionId,
+    /// Is it in ours? (Never while we are not in one.)
+    pub in_session: bool,
+    /// Its timeline as last announced — its tempo.
+    pub timeline: Timeline,
+    pub start_stop: Option<StartStop>,
+    /// The paths it is heard over, most recently heard first.
+    pub paths: Vec<PeerPath>,
+    /// Host µs it was last heard from.
+    pub heard: Micros,
+}
+
+/// One path a peer is heard over: the address its messages come from and
+/// the measurement endpoint (`mep4`) it announces there.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct PeerPath {
+    pub from: IpAddr,
+    pub endpoint: SocketAddrV4,
 }
 
 /// A copy of the session as one peer sees it — everything a sequencer or a
@@ -274,6 +303,30 @@ impl Engine {
         }
     }
 
+    /// Every peer heard and not yet forgotten, in node-id order.
+    pub fn peers(&self) -> Vec<PeerInfo> {
+        let joined = self.status == Status::Joined;
+        self.peers
+            .iter()
+            .map(|(node, p)| {
+                let mut heard: Vec<&Heard> = p.endpoints.iter().collect();
+                heard.sort_by_key(|h| std::cmp::Reverse(h.expires));
+                PeerInfo {
+                    node: *node,
+                    session: p.session,
+                    in_session: joined && p.session == self.session,
+                    timeline: p.timeline,
+                    start_stop: p.start_stop,
+                    paths: heard
+                        .into_iter()
+                        .map(|h| PeerPath { from: h.from, endpoint: h.endpoint })
+                        .collect(),
+                    heard: p.heard,
+                }
+            })
+            .collect()
+    }
+
     fn members(&self) -> usize {
         self.peers.values().filter(|p| p.session == self.session).count()
     }
@@ -348,7 +401,14 @@ impl Engine {
                 None => endpoints.push(heard),
             }
         }
-        let peer = Peer { session, timeline, start_stop: msg.start_stop(), endpoints, expires };
+        let peer = Peer {
+            session,
+            timeline,
+            start_stop: msg.start_stop(),
+            endpoints,
+            heard: now,
+            expires,
+        };
         let previous = self.peers.insert(msg.node, peer);
         let joined = self.status == Status::Joined;
         if joined && previous.is_none() && msg.kind == DiscoveryKind::Alive {
@@ -782,6 +842,53 @@ mod tests {
         let peer = &joiner.peers[&FOUNDER];
         assert_eq!(peer.endpoints.len(), 1);
         assert!(!peer.endpoint().unwrap().ip().is_loopback());
+    }
+
+    /// The peer list is a plain copy of who is heard: node, session and
+    /// whether it is ours, tempo, the paths it came over (newest first),
+    /// and when it was last heard — and it forgets with the engine.
+    #[test]
+    fn the_peer_list_is_a_snapshot_of_who_is_heard() {
+        let (mut founder, mut joiner) = joined_pair();
+        let lone = Engine::new(NodeId(*b"stranger"), founding(), 0);
+        assert!(lone.peers().is_empty());
+        let peers = founder.peers();
+        let [p] = peers.as_slice() else { panic!("{peers:?}") };
+        assert_eq!((p.node, p.session, p.in_session), (JOINER, FOUNDER, true));
+        assert!((p.timeline.bpm() - 120.0).abs() < 1e-3);
+        assert_eq!(p.heard, 1_500_000);
+        // A peer is listed by the paths it announces an endpoint over: the
+        // joiner, given one, is heard over the LAN, then over loopback (it
+        // is on this machine) with a tempo change.
+        assert!(p.paths.is_empty(), "no endpoint announced yet");
+        joiner.set_endpoint("10.0.0.2:4001".parse().unwrap());
+        deliver(&joiner.tick(1_900_000), &mut founder, 2, 1_900_000);
+        let change = joiner.propose_tempo(90.0, 2_000_000, 2_000_000);
+        for m in change.iter().filter_map(|a| match a {
+            Action::Broadcast(m) => Some(m.clone().with_endpoint_ip([127, 0, 0, 1].into())),
+            _ => None,
+        }) {
+            founder.on_discovery(SocketAddr::from(([127, 0, 0, 1], 9)), &m, 2_000_000);
+        }
+        let p = &founder.peers()[0];
+        assert!((p.timeline.bpm() - 90.0).abs() < 1e-3);
+        assert_eq!(p.heard, 2_000_000);
+        let from: Vec<IpAddr> = p.paths.iter().map(|h| h.from).collect();
+        assert_eq!(from, [IpAddr::from([127, 0, 0, 1]), addr(2).ip()], "newest first");
+        assert!(p.paths[0].endpoint.ip().is_loopback());
+        // A peer of another session is listed, and not as ours.
+        let (other, says) = {
+            let mut o = Engine::new(NodeId(*b"otherone"), founding(), 0);
+            o.set_endpoint("10.0.0.3:4002".parse().unwrap());
+            let says = o.tick(1_000_000);
+            (o.node(), says)
+        };
+        deliver(&says, &mut founder, 3, 2_100_000);
+        let theirs = founder.peers().into_iter().find(|p| p.node == other).unwrap();
+        assert!(!theirs.in_session);
+        assert_eq!(theirs.session, other);
+        founder.tick(2_000_000 + 5_000_001);
+        assert!(founder.peers().iter().all(|p| p.node != JOINER), "forgotten");
     }
 
     #[test]

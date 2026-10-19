@@ -45,6 +45,6 @@ pub use clock::HostClock;
 pub use net::{
     Interface, Link, Network, RESCAN, address_for, burst, discovery_listener, interfaces,
 };
-pub use session::{Config, SessionState, Status};
+pub use session::{Config, PeerInfo, PeerPath, SessionState, Status};
 pub use timeline::{Micros, StartStop, Timeline};
 pub use wire::{NodeId, SessionId};
