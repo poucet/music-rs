@@ -5,6 +5,20 @@ format is stated once in AGENTS.md §2.
 
 ## Unreleased
 
+#### `./install` puts the binaries on your machine (`MUSIC-INSTALL`) · 2026-10-19 23:22 · ymwqyukp
+
+- **Added: `./install` at the repo root.** It builds every binary in the
+  workspace in release (today `link-midi` and `simply-osc`) and copies them
+  into `~/.local/bin` on macOS and Linux. `./install link-midi` installs just
+  the named ones; `--prefix DIR` (or `PREFIX=DIR`) installs into `DIR/bin`;
+  `--list` prints what the workspace builds; `--uninstall` removes them again.
+- The list comes from `cargo metadata`, so a new binary is installed without
+  editing the script. If the destination is not on your `PATH` it prints the
+  `export PATH=…` line to add, and never touches your shell's startup files.
+- It is a POSIX `sh` script (checked under macOS bash 3.2, zsh and dash;
+  shellcheck clean). Build-and-copy rather than `cargo install`: it reuses the
+  workspace's `target/` and `Cargo.lock` instead of a cold build per crate.
+
 #### `simply-link` meets Ableton's peers properly: pongs name their session, the older session wins (`LINK-JOIN`) · 2026-10-19 19:50 · rpqxqswk
 
 - **Fixed: no Ableton peer could join a session through ours.** A pong now

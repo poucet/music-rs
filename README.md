@@ -26,6 +26,20 @@ Canonical musical definitions, performance sequencing models, and tool contracts
 
 Each crate's own README carries the details: [`simply-link-midi`](crates/simply-link-midi/README.md), [`simply-osc`](crates/simply-osc/README.md).
 
+### Installing them
+
+`./install` builds every binary in release and copies it into `~/.local/bin` (macOS and Linux alike):
+
+```sh
+./install                        # all of them, into ~/.local/bin
+./install link-midi              # just the ones named
+./install --prefix /opt/simply   # into /opt/simply/bin instead (or PREFIX=/opt/simply)
+./install --list                 # what the workspace builds
+./install --uninstall            # remove them again (names and --prefix work here too)
+```
+
+The binary list comes from `cargo metadata`, so a new `[[bin]]` is picked up without editing the script. If the destination is not on your `PATH`, the script prints the `export PATH=…` line to add; it never edits your shell's startup files.
+
 ### Design Principles
 
 - **Pure-Data Contract**: `simply-fugue` depends strictly on `serde`, `serde_json`, and `schemars`. It contains no DSP code, audio drivers, or host-specific logic.

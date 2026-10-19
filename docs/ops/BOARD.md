@@ -18,6 +18,7 @@ Legend: 🚧 in flight · ✅ landed · ⏸ deferred.
 
 | Landed | Lane | What |
 |---|---|---|
+| 2026-10-19 | `MUSIC-INSTALL` | `./install` POSIX script: release-builds every workspace binary (found via `cargo metadata`) into `~/.local/bin`, `--prefix`/`PREFIX`, `--list`, `--uninstall`, named subsets; README section |
 | 2026-10-19 | `LINK-JOIN` | `simply-link` pongs carry `sess` (Ableton peers can join our sessions); sessions merge by Link's rule (older wins); founder ghost starts at 0; Ableton-peer model tests |
 | 2026-10-16 | `LINK-MIDI-NET` | cross-machine Link audit: discovery/advertisement already right; `join` counts EADDRINUSE as joined (Wi-Fi new-address rejoin); `founder` example; two-laptop procedure in link-midi README |
 | 2026-10-10 | `MIDIMOVE` | five protocol-floor crates moved in from flux (`simply-osc`, `simply-link`, `simply-midi-clock`, `simply-link-midi`, `simply-midi`); two binaries (`simply-osc`, `link-midi`); rustfmt.toml + fmt sweep; 133/0/1, clippy 0 |

@@ -1,0 +1,123 @@
+#!/bin/sh
+# install — build this workspace's binaries in release and put them on disk.
+#
+#   ./install                     build + install every binary into ~/.local/bin
+#   ./install link-midi           just the named binaries
+#   ./install --prefix DIR ...    install into DIR/bin instead (or PREFIX=DIR)
+#   ./install --list              print the binaries this workspace builds
+#   ./install --uninstall [BIN…]  remove them from the prefix again
+#
+# The binaries are found with `cargo metadata`, never listed here, so a new
+# `[[bin]]` anywhere in the workspace is picked up without touching this file.
+#
+# Why `cargo build --release` + copy rather than `cargo install --path`:
+# cargo install builds each crate in a throwaway target directory, so every
+# install is a cold release build; building in the workspace reuses `target/`
+# and the workspace's Cargo.lock (`--locked`). Each binary is copied beside its
+# destination and then renamed over it, so a running copy is never written in
+# place (macOS kills a signed binary whose pages change under it).
+#
+# POSIX sh: macOS's bash 3.2 / zsh and Linux dash all run it. No GNU-only flags.
+set -eu
+# Run as `zsh ./install`, zsh would not word-split $names; make it.
+if [ -n "${ZSH_VERSION:-}" ]; then setopt SH_WORD_SPLIT; fi
+
+usage() {
+	sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'
+}
+
+die() {
+	printf 'install: %s\n' "$*" >&2
+	exit 1
+}
+
+prefix=${PREFIX:-"$HOME/.local"}
+mode=install
+names=
+
+while [ $# -gt 0 ]; do
+	case $1 in
+	--prefix)
+		[ $# -ge 2 ] || die "--prefix needs a directory"
+		prefix=$2
+		shift 2
+		;;
+	--prefix=*)
+		prefix=${1#--prefix=}
+		shift
+		;;
+	--list) mode=list; shift ;;
+	--uninstall) mode=uninstall; shift ;;
+	-h | --help) usage; exit 0 ;;
+	-*) die "unknown option: $1 (try --help)" ;;
+	*) names="$names $1"; shift ;;
+	esac
+done
+
+command -v cargo >/dev/null 2>&1 || die "cargo not found on PATH"
+cd "$(dirname "$0")"
+
+# cargo metadata prints one line of JSON; each bin target serializes as
+# {"kind":["bin"],"crate_types":["bin"],"name":"…",…}.
+metadata=$(cargo metadata --no-deps --format-version 1)
+all=$(printf '%s\n' "$metadata" |
+	grep -o '"kind":\["bin"\],"crate_types":\["bin"\],"name":"[^"]*"' |
+	sed 's/.*"name":"\([^"]*\)"$/\1/')
+target_dir=$(printf '%s\n' "$metadata" |
+	sed 's/.*"target_directory":"\([^"]*\)".*/\1/')
+[ -n "$all" ] || die "cargo metadata reported no binary targets"
+
+if [ "$mode" = list ]; then
+	printf '%s\n' "$all"
+	exit 0
+fi
+
+# Validate any names asked for against what the workspace actually builds.
+if [ -z "$names" ]; then
+	names=$all
+else
+	for n in $names; do
+		printf '%s\n' "$all" | grep -qx "$n" ||
+			die "no binary named '$n' (have: $(printf '%s\n' "$all" | tr '\n' ' '))"
+	done
+fi
+
+bindir=$prefix/bin
+
+if [ "$mode" = uninstall ]; then
+	for n in $names; do
+		if [ -e "$bindir/$n" ]; then
+			rm -f "$bindir/$n"
+			printf 'removed %s\n' "$bindir/$n"
+		fi
+	done
+	exit 0
+fi
+
+bin_args=
+for n in $names; do bin_args="$bin_args --bin $n"; done
+# shellcheck disable=SC2086 # word-splitting $bin_args is the point
+cargo build --release --locked $bin_args
+
+mkdir -p "$bindir"
+for n in $names; do
+	cp "$target_dir/release/$n" "$bindir/.$n.tmp"
+	chmod 755 "$bindir/.$n.tmp"
+	mv -f "$bindir/.$n.tmp" "$bindir/$n"
+	printf 'installed %s\n' "$bindir/$n"
+done
+
+case ":$PATH:" in
+*":$bindir:"*) ;;
+*)
+	# shellcheck disable=SC2088 # a literal ~ is what the user should read
+	case ${SHELL:-} in
+	*/zsh) rc='~/.zshrc' ;;
+	*/bash) rc='~/.bashrc (or ~/.bash_profile on macOS)' ;;
+	*) rc='your shell startup file' ;;
+	esac
+	printf '\n%s is not on your PATH. Add this line to %s:\n\n' "$bindir" "$rc"
+	# shellcheck disable=SC2016 # the user's $PATH, printed literally
+	printf '    export PATH="%s:$PATH"\n\n' "$bindir"
+	;;
+esac
