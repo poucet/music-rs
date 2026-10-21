@@ -5,6 +5,8 @@ format is stated once in AGENTS.md §2.
 
 ## Unreleased
 
+## 1.0.1 — 2026-10-21
+
 #### `simply-link` peers no longer start a multicast storm when two tempo changes cross (`LINK-STORM`) · 2026-10-21 18:01 · ponkkpuy
 
 - **Fixed: two members proposing different tempos at the same moment swapped
