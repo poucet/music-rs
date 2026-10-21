@@ -18,6 +18,7 @@ Legend: 🚧 in flight · ✅ landed · ⏸ deferred.
 
 | Landed | Lane | What |
 |---|---|---|
+| 2026-10-21 | `LINK-STORM` | `simply-link`: a member's timeline is adopted only if newer (total order, Ableton's beat-origin rule), and adopted changes are re-announced at most every 50 ms. Ends the crossing-proposal multicast storm (~10k msgs/s per peer) that cost tussen's RTP ~45 % of its packets |
 | 2026-10-19 | `MUSIC-INSTALL` | `./install` POSIX script: release-builds every workspace binary (found via `cargo metadata`) into `~/.local/bin`, `--prefix`/`PREFIX`, `--list`, `--uninstall`, named subsets; README section |
 | 2026-10-19 | `LINK-JOIN` | `simply-link` pongs carry `sess` (Ableton peers can join our sessions); sessions merge by Link's rule (older wins); founder ghost starts at 0; Ableton-peer model tests |
 | 2026-10-16 | `LINK-MIDI-NET` | cross-machine Link audit: discovery/advertisement already right; `join` counts EADDRINUSE as joined (Wi-Fi new-address rejoin); `founder` example; two-laptop procedure in link-midi README |

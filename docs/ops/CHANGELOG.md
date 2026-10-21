@@ -5,6 +5,31 @@ format is stated once in AGENTS.md §2.
 
 ## Unreleased
 
+#### `simply-link` peers no longer start a multicast storm when two tempo changes cross (`LINK-STORM`) · 2026-10-21 18:01 · ponkkpuy
+
+- **Fixed: two members proposing different tempos at the same moment swapped
+  timelines forever.** Each one adopted the other's change and re-announced it
+  at once, so the pair traded timelines at network round-trip speed. On
+  2026-10-21 three tussen hubs on one LAN were sending ~10 000 Link `alive`
+  multicasts a second each at ~110 % CPU. That drowned the network stack: the
+  tussen hub's RTP audio lost ~45 % of its packets ("short pieces of audio
+  then silence" in `replay`), and this crate's own loopback measurement test
+  failed. The loop dates from the crates' move-in from flux (`kzkwnxsv`).
+- **A member's timeline is adopted only when it is newer than ours**
+  (`Timeline::newer_than`: the later beat origin wins, as in Ableton's
+  `updateTimeline`, with a tie going to the later time origin and then the
+  slower tempo). It is a total order, so every peer settles on the same line
+  whatever order the announcements arrive in. A change proposed for a moment
+  before the session's current line now gives way everywhere, the proposer
+  included, instead of leaving it on a timeline of its own.
+- **Adopted changes are passed on at most once per `REANNOUNCE_MIN` (50 ms)**,
+  Ableton's broadcast minimum. A change that arrives in between goes out with
+  the next tick. It's a safety net: however the rules fail, a peer's
+  announcements stay countable. Our own proposals still go out at once.
+- In the regression test, two crossing proposals took 20 002 multicasts in one
+  simulated second and never agreed before the fix. After it, they agree on
+  arrival (100 µs) with 9 multicasts.
+
 ## 1.0.0 — 2026-10-19
 
 #### The Link-to-MIDI-clock binary is `simply-link` · 2026-10-19 23:29 · tmokkqxz

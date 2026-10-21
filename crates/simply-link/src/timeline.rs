@@ -73,6 +73,18 @@ impl Timeline {
                 as i64
     }
 
+    /// Whether this timeline supersedes `other` when members of one
+    /// session announce different ones: the later beat origin wins — a
+    /// change is made at a later beat than the line it changes, Ableton's
+    /// own proxy for "newer" — and a tie goes to the later time origin,
+    /// then the slower tempo. A total order, so every peer settles on the
+    /// same line whatever order the announcements arrive in; two proposals
+    /// that cross on the network can't swap places forever.
+    pub fn newer_than(&self, other: &Timeline) -> bool {
+        (self.beat_origin, self.time_origin, self.micros_per_beat)
+            > (other.beat_origin, other.time_origin, other.micros_per_beat)
+    }
+
     /// The same beat line at a new tempo, crossing the old one at ghost time
     /// `ghost` — what a tempo change *is* (Goltz 2018, §4, fig. 1): the beat
     /// at the moment of the change does not jump.

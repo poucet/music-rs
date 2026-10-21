@@ -18,10 +18,14 @@
 //! 2. **Join.** A peer that is not yet in a session measures a member of
 //!    the first session it hears (see [`crate::measure`]) and, once it has
 //!    the offset, adopts that session's id, timeline and start/stop state.
-//! 3. **Follow.** In the session, a timeline *change* announced by any
-//!    member is adopted — a change relative to what that member announced
-//!    before, so an old announcement still in flight cannot undo a newer
-//!    change of ours. The start/stop state with the latest timestamp wins.
+//! 3. **Follow.** In the session, a member's timeline is adopted when it
+//!    is newer than ours ([`Timeline::newer_than`]: a change is made at a
+//!    later beat than the line it changes). So an old announcement still
+//!    in flight cannot undo a newer change of ours, and two changes that
+//!    cross on the network settle on one everywhere instead of swapping
+//!    places at network speed — a multicast storm. The start/stop state with the
+//!    latest timestamp wins. What is adopted is passed on at most once per
+//!    [`REANNOUNCE_MIN`]; a change in between goes out with the next.
 //! 4. **Found** (optional — [`Config::found_after`], or on demand with
 //!    [`Engine::found`]). A peer that has heard no session for that long
 //!    founds one: its session id is its node id, and its ghost clock
@@ -242,6 +246,9 @@ pub struct Engine {
     outranked: BTreeSet<SessionId>,
     searching_since: Micros,
     last_announce: Option<Micros>,
+    /// Something adopted from a member is waiting for [`REANNOUNCE_MIN`]
+    /// to pass before it is announced.
+    announce_due: bool,
     measuring: Option<(SessionId, Micros)>,
     measured_at: Micros,
     no_retry_before: Micros,
@@ -252,6 +259,10 @@ const MEASURE_TIMEOUT: Micros = 5_000_000;
 /// Two sessions whose ghost times are closer than this are a tie, settled
 /// by id (rule 5) — Ableton's own margin.
 pub const SESSION_EPS: Micros = 500_000;
+/// What a member announced is passed on at most this often (Ableton's
+/// gateway keeps the same minimum between broadcasts): whatever happens,
+/// a peer's announcements stay countable.
+pub const REANNOUNCE_MIN: Micros = 50_000;
 
 impl Engine {
     pub fn new(node: NodeId, config: Config, now: Micros) -> Self {
@@ -269,6 +280,7 @@ impl Engine {
             outranked: BTreeSet::new(),
             searching_since: now,
             last_announce: None,
+            announce_due: false,
             measuring: None,
             measured_at: now,
             no_retry_before: now,
@@ -358,6 +370,7 @@ impl Engine {
 
     fn announce(&mut self, now: Micros) -> Action {
         self.last_announce = Some(now);
+        self.announce_due = false;
         Action::Broadcast(self.message(DiscoveryKind::Alive))
     }
 
@@ -420,9 +433,8 @@ impl Engine {
             out.push(Action::Send(from, self.message(DiscoveryKind::Response)));
         }
         if joined && session == self.session {
-            let changed = previous.is_none_or(|p| p.session != session || p.timeline != timeline);
             let mut announce = false;
-            if changed && timeline != self.timeline {
+            if timeline.newer_than(&self.timeline) {
                 self.timeline = timeline;
                 announce = true;
             }
@@ -433,7 +445,11 @@ impl Engine {
                 announce = true;
             }
             if announce {
-                out.push(self.announce(now));
+                if self.last_announce.is_some_and(|t| now - t < REANNOUNCE_MIN) {
+                    self.announce_due = true;
+                } else {
+                    out.push(self.announce(now));
+                }
             }
         } else if !self.outranked.contains(&session) {
             // Not yet in a session: the first one heard is joined. In one:
@@ -521,7 +537,10 @@ impl Engine {
         }
         match self.status {
             Status::Joined => {
-                if self.last_announce.is_none_or(|t| now - t >= self.config.announce_every) {
+                let since = self.last_announce.map(|t| now - t);
+                if since.is_none_or(|s| {
+                    s >= self.config.announce_every || (self.announce_due && s >= REANNOUNCE_MIN)
+                }) {
                     out.push(self.announce(now));
                 }
                 // A foreign session still undecided — heard while another
@@ -761,6 +780,103 @@ mod tests {
         assert!((joiner.state().tempo() - 90.0).abs() < 1e-3, "kept");
         deliver(&change, &mut founder, 2, at + 200);
         assert!((founder.state().tempo() - 90.0).abs() < 1e-3, "and followed");
+    }
+
+    fn broadcasts(actions: Vec<Action>) -> Vec<Action> {
+        actions.into_iter().filter(|a| matches!(a, Action::Broadcast(_))).collect()
+    }
+
+    /// Two joined peers talking over a network that takes 100 µs each way,
+    /// for one simulated second from `at`, both ticked as the network
+    /// layer does: when (in µs after `at`) they first agree on the
+    /// timeline, and how many multicasts they sent between them.
+    fn converse(
+        a: &mut Engine,
+        b: &mut Engine,
+        mut to_b: Vec<Action>,
+        mut to_a: Vec<Action>,
+        at: Micros,
+    ) -> (Option<Micros>, usize) {
+        let (mut agreed, mut sent) = (None, to_a.len() + to_b.len());
+        for step in 1..=10_000 {
+            let now = at + step * 100;
+            let mut from_b = deliver(&to_b, b, 1, now);
+            let mut from_a = deliver(&to_a, a, 2, now);
+            if step % 200 == 0 {
+                from_a.extend(a.tick(now));
+                from_b.extend(b.tick(now));
+            }
+            (to_a, to_b) = (broadcasts(from_b), broadcasts(from_a));
+            sent += to_a.len() + to_b.len();
+            if agreed.is_none() && a.state().timeline == b.state().timeline {
+                agreed = Some(now - at);
+            }
+        }
+        (agreed, sent)
+    }
+
+    /// Two members proposing different tempos at the same moment: each
+    /// hears the other's change before its own arrives. They must settle
+    /// on one — not swap timelines back and forth at network speed, which
+    /// was a multicast storm of thousands of announcements a second that
+    /// drowned everything else on the network (the tussen hub's RTP audio).
+    #[test]
+    fn two_tempo_changes_that_cross_settle_on_one() {
+        let (mut founder, mut joiner) = joined_pair();
+        let at = 3_000_000;
+        let to_joiner = founder.propose_tempo(90.0, at, at);
+        let to_founder = joiner.propose_tempo(100.0, at, at);
+        let (agreed, sent) = converse(&mut founder, &mut joiner, to_joiner, to_founder, at);
+        assert_eq!(agreed, Some(100), "agreed on arrival ({sent} multicasts)");
+        assert!((founder.state().tempo() - joiner.state().tempo()).abs() < 1e-9);
+        // The periodic announcements (4 a second each) plus a few — not
+        // one per network round trip.
+        assert!(sent <= 12, "{sent} multicasts in one second");
+    }
+
+    #[test]
+    fn the_same_change_from_both_is_not_echoed() {
+        let (mut founder, mut joiner) = joined_pair();
+        let at = 3_000_000;
+        let to_joiner = founder.propose_tempo(90.0, at, at);
+        let to_founder = joiner.propose_tempo(90.0, at, at);
+        assert!(broadcasts(deliver(&to_joiner, &mut joiner, 1, at + 100)).is_empty());
+        assert!(broadcasts(deliver(&to_founder, &mut founder, 2, at + 100)).is_empty());
+        assert_eq!(founder.state().timeline, joiner.state().timeline);
+    }
+
+    /// A change proposed for a moment before the session's current line
+    /// (an older line) loses everywhere, the proposer included, rather
+    /// than leaving it on a timeline of its own.
+    #[test]
+    fn a_change_older_than_the_sessions_line_gives_way() {
+        let (mut founder, mut joiner) = joined_pair();
+        founder.propose_tempo(90.0, 3_000_000, 3_000_000);
+        let stale = joiner.propose_tempo(100.0, 2_000_000, 3_000_000);
+        assert!(deliver(&stale, &mut founder, 2, 3_000_100).is_empty(), "refused");
+        let periodic = founder.tick(3_300_000);
+        deliver(&periodic, &mut joiner, 1, 3_300_100);
+        assert_eq!(joiner.state().timeline, founder.state().timeline);
+        assert!((joiner.state().tempo() - 90.0).abs() < 1e-3);
+    }
+
+    /// What a member changed is passed on at most once per
+    /// [`REANNOUNCE_MIN`]; the latest change goes out with the next.
+    #[test]
+    fn adopted_changes_are_passed_on_at_most_once_per_reannounce_min() {
+        let (mut founder, mut joiner) = joined_pair();
+        let at = 3_000_000;
+        let mut passed_on = 0;
+        for i in 0..10 {
+            let t = at + i * 1_000;
+            let change = founder.propose_tempo(90.0 + i as f64, t, t);
+            passed_on += broadcasts(deliver(&change, &mut joiner, 1, t + 100)).len();
+        }
+        assert_eq!(passed_on, 1, "the first at once, the rest held");
+        assert!(broadcasts(joiner.tick(at + 40_000)).is_empty());
+        let next = broadcasts(joiner.tick(at + 1_000 + REANNOUNCE_MIN));
+        let [Action::Broadcast(m)] = next.as_slice() else { panic!("{next:?}") };
+        assert_eq!(m.timeline(), Some(founder.state().timeline), "the latest");
     }
 
     #[test]
