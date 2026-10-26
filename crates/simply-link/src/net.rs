@@ -41,7 +41,7 @@ use socket2::{Domain, Protocol, SockRef, Socket, Type};
 
 use crate::clock::HostClock;
 use crate::measure;
-use crate::session::{Action, Config, Engine, PeerInfo, SessionState};
+use crate::session::{Action, Config, Engine, LocalBeats, PeerInfo, SessionState};
 use crate::timeline::Micros;
 use crate::wire::{Discovery, GROUP, MAX_MESSAGE, NodeId, PORT, SessionId};
 
@@ -470,6 +470,18 @@ impl Link {
         self.shared.engine().state()
     }
 
+    /// [`Link::state`] with this peer's own beat numbering
+    /// ([`LocalBeats`]): what to read after [`Link::request_beat_at`] or
+    /// [`Link::force_beat_at`]. The same lock, the same snapshot.
+    pub fn local(&self) -> LocalBeats {
+        self.shared.engine().local()
+    }
+
+    /// This peer's beats minus the session's ([`Engine::beat_offset`]).
+    pub fn beat_offset(&self) -> f64 {
+        self.shared.engine().beat_offset()
+    }
+
     /// Every peer this one hears right now, in node-id order — a copy,
     /// taken under the engine's lock and released at once.
     pub fn peers(&self) -> Vec<PeerInfo> {
@@ -498,6 +510,32 @@ impl Link {
     pub fn propose_tempo(&self, bpm: f64, at: Micros) {
         let now = self.shared.clock.now();
         let actions = self.shared.engine().propose_tempo(bpm, at, now);
+        self.shared.perform(actions);
+    }
+
+    /// Ask for `beat` at host time `at` — Ableton's `requestBeatAtTime`.
+    /// Alone in the session, the session is moved; with peers only this
+    /// peer's beat numbering is, by whole quanta ([`Engine::request_beat_at`]).
+    pub fn request_beat_at(&self, beat: f64, at: Micros, quantum: f64) {
+        let now = self.shared.clock.now();
+        let actions = self.shared.engine().request_beat_at(beat, at, quantum, now);
+        self.shared.perform(actions);
+    }
+
+    /// Put `beat` (its phase in `quantum`) at host time `at` for every
+    /// peer — Ableton's `forceBeatAtTime`. Rude: every other app's phase
+    /// jumps ([`Engine::force_beat_at`]).
+    pub fn force_beat_at(&self, beat: f64, at: Micros, quantum: f64) {
+        let now = self.shared.clock.now();
+        let actions = self.shared.engine().force_beat_at(beat, at, quantum, now);
+        self.shared.perform(actions);
+    }
+
+    /// [`Link::propose_tempo`] and [`Link::force_beat_at`] in one commit
+    /// and one broadcast ([`Engine::propose_timeline`]).
+    pub fn propose_timeline(&self, bpm: f64, beat: f64, at: Micros, quantum: f64) {
+        let now = self.shared.clock.now();
+        let actions = self.shared.engine().propose_timeline(bpm, beat, at, quantum, now);
         self.shared.perform(actions);
     }
 

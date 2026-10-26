@@ -197,3 +197,61 @@ fn a_follower_joins_a_lone_app_at_its_tempo_whether_it_came_first_or_not() {
         assert!((app.state().tempo() - 126.0).abs() < 1e-3);
     }
 }
+
+/// The bridge's verbs on real sockets: one peer forces a beat and the
+/// other's phase follows within one announcement; the other's polite
+/// request then renumbers only its own beats; a tempo-and-beat proposal
+/// arrives whole. Phase agreement within a millisecond's worth of beat, as
+/// above.
+#[test]
+fn a_forced_beat_reaches_the_other_peer_and_a_request_stays_home() {
+    let net = private_network();
+    let founder =
+        Link::join_on(Config { found_after: Some(200_000), bpm: 120.0, ..Config::default() }, net)
+            .expect("founder");
+    wait_for("the founder to found", || founder.state().joined());
+    let follower = Link::join_on(Config::default(), net).expect("follower");
+    wait_for("each to see the other", || founder.state().peers == 1 && follower.state().peers == 1);
+    let ms_of_beat = |bpm: f64| bpm / 60.0 * 0.001;
+    let agree = |q: f64| {
+        let at = Instant::now();
+        let a = founder.state().phase_at(founder.clock().micros(at), q);
+        let b = follower.state().phase_at(follower.clock().micros(at), q);
+        let d = (a - b).rem_euclid(q);
+        d.min(q - d)
+    };
+
+    // Force: beat 2.5 of a 4-beat bar, half a second from now.
+    let at = founder.clock().now() + 500_000;
+    let before = follower.state().timeline;
+    founder.force_beat_at(2.5, at, 4.0);
+    assert!((founder.local().beat_at(at) - 2.5).abs() < 1e-5);
+    wait_for("the forced line to arrive", || follower.state().timeline != before);
+    assert_eq!(follower.state().timeline, founder.state().timeline);
+    let f_at = follower.clock().micros(founder.clock().instant(at));
+    assert!((follower.state().phase_at(f_at, 4.0) - 2.5).abs() < ms_of_beat(120.0));
+    assert!(agree(4.0) < ms_of_beat(120.0));
+
+    // Request, with a peer: our numbering moves, the session does not.
+    let line = founder.state().timeline;
+    let at = follower.clock().now() + 100_000;
+    follower.request_beat_at(0.0, at, 4.0);
+    let s = follower.local();
+    assert_eq!(s.state.timeline, line, "nothing shared moved");
+    assert_eq!(follower.beat_offset(), s.beat_offset);
+    let r = s.beat_offset.rem_euclid(4.0);
+    assert!(r < 1e-6 || 4.0 - r < 1e-6, "whole bars: {}", s.beat_offset);
+    thread::sleep(Duration::from_millis(300));
+    assert_eq!(founder.state().timeline, line);
+    assert_eq!(founder.beat_offset(), 0.0);
+    assert!(agree(4.0) < ms_of_beat(120.0));
+
+    // Tempo and beat in one: from the follower, to the founder.
+    let at = follower.clock().now() + 200_000;
+    follower.propose_timeline(100.0, 1.0, at, 4.0);
+    wait_for("the new timeline to arrive", || (founder.state().tempo() - 100.0).abs() < 1e-3);
+    assert_eq!(founder.state().timeline, follower.state().timeline);
+    assert!(agree(4.0) < ms_of_beat(100.0));
+    let f_at = founder.clock().micros(follower.clock().instant(at));
+    assert!((founder.state().phase_at(f_at, 4.0) - 1.0).abs() < ms_of_beat(100.0));
+}

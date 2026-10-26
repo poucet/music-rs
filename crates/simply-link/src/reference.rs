@@ -380,6 +380,47 @@ mod tests {
         }
     }
 
+    /// The tussen bridge's case: the hub follows a DJ's session, then
+    /// forces the mesh's beat onto it. The DJ has just moved its tempo, so
+    /// its beat origin is under a beat behind `at`: a force that moves the
+    /// beat back lands behind that origin, one that moves it on lands past
+    /// it. An Ableton peer adopts a timeline only with a greater beat
+    /// origin, so both must be anchored past the DJ's; after hearing the
+    /// force the DJ's phase is the forced beat's, and its tempo is unmoved.
+    #[test]
+    fn an_ableton_peer_adopts_a_forced_beat() {
+        for shift in [-0.5, 1.5] {
+            let mut e = Engine::new(HUB, Config::default(), 0);
+            e.set_endpoint("10.0.0.1:4000".parse().unwrap());
+            let mut room = Room::new(e, 0);
+            let mut dj = RealLink::enable(DJ, 126.0, 0, 3_000_000);
+            dj.timeline = Timeline::at(126.0, 1234.567, 0);
+            room.dj = Some(dj);
+            room.run(3_000_000);
+            assert!(in_one_session(&room));
+            room.dj.as_mut().unwrap().set_tempo(126.0, room.now);
+            room.run(300_000);
+            let before = room.dj.as_ref().unwrap().timeline;
+            assert_eq!(room.hub.state().timeline, before, "followed");
+            let at = room.now + 100_000;
+            let beat = room.hub.local().beat_at(at) + shift;
+            let forced = room.hub.force_beat_at(beat, at, 4.0, room.now);
+            assert_eq!(forced.len(), 1);
+            room.perform(forced);
+            let dj = room.dj.as_ref().unwrap();
+            assert_eq!(dj.timeline, room.hub.state().timeline, "adopted, shift {shift}");
+            assert!(dj.timeline.beat_origin >= before.beat_origin + 1_000_000);
+            assert!((dj.timeline.bpm() - 126.0).abs() < 1e-3);
+            let hub = room.hub.local();
+            assert!((hub.beat_at(at) - beat).abs() < 1e-5);
+            for t in [at, at + 1_234_567] {
+                let theirs = crate::timeline::phase(dj.timeline.beat_at(dj.ghost(t)), 4.0);
+                assert!((theirs - hub.phase_at(t, 4.0)).abs() < 1e-5, "{shift} {t}");
+            }
+            assert!((hub.phase_at(at, 4.0) - beat.rem_euclid(4.0)).abs() < 1e-5);
+        }
+    }
+
     /// The race behind the deadlock: the hub and the DJ each measure the
     /// other's session at the same moment. Whatever the order, both must
     /// end in the same one.

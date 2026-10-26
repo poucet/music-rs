@@ -46,11 +46,30 @@
 //!    switched on), so it joins the session it finds — whoever founded it.
 //! 6. **Re-measure** every [`Config::remeasure_every`] against a member, so
 //!    drift between the two machines' clocks is taken up.
+//! 7. **Move the beat** (Ableton's `requestBeatAtTime` and
+//!    `forceBeatAtTime`). What peers share is the session's *phase*; the
+//!    beat's *number* is each peer's own. So a peer keeps a local
+//!    [`LocalBeats::beat_offset`] (its beats minus the session's), and
+//!    moving the beat has two parts: shifting the session's line by less
+//!    than half a quantum, so that the beat's phase lands where asked —
+//!    which every peer sees — and setting the offset, so that the beat's
+//!    number does too — which nobody else sees.
+//!    [`Engine::force_beat_at`] does both, always: it commits a new line
+//!    (anchored past the old one, [`Timeline::committed_after`], so every
+//!    peer adopts it) and announces it like a tempo change.
+//!    [`Engine::request_beat_at`] does both only while alone in the
+//!    session; with peers it moves the session nowhere and only sets the
+//!    offset, to a whole number of quanta, so the beat lands at the first
+//!    moment from then on with its phase. The offset is reset when the
+//!    peer founds, joins (or merges into) a session, or leaves.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::net::{IpAddr, SocketAddr, SocketAddrV4};
 
-use crate::timeline::{GhostXForm, MICROBEATS, Micros, StartStop, Timeline, next_boundary, phase};
+use crate::timeline::{
+    GhostXForm, MICROBEATS, Micros, StartStop, Timeline, closest_phase_match, next_boundary,
+    next_phase_match, phase,
+};
 use crate::wire::{Discovery, DiscoveryKind, Entry, NodeId, SessionId};
 
 /// How a peer behaves; the defaults are the bridge's (follow, never found).
@@ -228,6 +247,43 @@ impl SessionState {
     }
 }
 
+/// The session as this peer counts it: a [`SessionState`] (the shared
+/// line, in the session's beats) and this peer's own numbering of those
+/// beats (module docs, rule 7). [`Engine::local`] and [`crate::Link::local`]
+/// give one. Phase always comes from the session, so the offset never moves
+/// it (Link's phase-encoded beats).
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct LocalBeats {
+    pub state: SessionState,
+    /// This peer's beats minus the session's: 0 unless
+    /// [`Engine::request_beat_at`] or [`Engine::force_beat_at`] renumbered
+    /// them. Never shared.
+    pub beat_offset: f64,
+}
+
+impl LocalBeats {
+    /// This peer's beat at host time `host`: the session's, plus the offset.
+    pub fn beat_at(&self, host: Micros) -> f64 {
+        self.state.beat_at(host) + self.beat_offset
+    }
+
+    /// The session's phase at `host` ([`SessionState::phase_at`]).
+    pub fn phase_at(&self, host: Micros, quantum: f64) -> f64 {
+        self.state.phase_at(host, quantum)
+    }
+
+    /// The host time at which this peer reaches `beat`, in its own beats.
+    pub fn host_at_beat(&self, beat: f64) -> Micros {
+        self.state.host_at_beat(beat - self.beat_offset)
+    }
+
+    /// The first beat, in this peer's beats, at or after the beat at
+    /// `host` where the session's phase is 0.
+    pub fn next_boundary(&self, host: Micros, quantum: f64) -> f64 {
+        self.state.next_boundary(host, quantum) + self.beat_offset
+    }
+}
+
 /// One peer's session logic. See the module docs for the rules.
 #[derive(Debug)]
 pub struct Engine {
@@ -239,6 +295,8 @@ pub struct Engine {
     timeline: Timeline,
     xform: GhostXForm,
     start_stop: Option<StartStop>,
+    /// Our beats minus the session's (rule 7).
+    beat_offset: f64,
     endpoint: Option<SocketAddrV4>,
     peers: BTreeMap<NodeId, Peer>,
     /// Foreign sessions measured and found not to win over ours (rule 5),
@@ -275,6 +333,7 @@ impl Engine {
             timeline: Timeline::at(config.bpm, 0.0, now),
             xform: GhostXForm::default(),
             start_stop: None,
+            beat_offset: 0.0,
             endpoint: None,
             peers: BTreeMap::new(),
             outranked: BTreeSet::new(),
@@ -318,6 +377,16 @@ impl Engine {
             xform: self.xform,
             start_stop: self.start_stop,
         }
+    }
+
+    /// Our beats minus the session's (rule 7).
+    pub fn beat_offset(&self) -> f64 {
+        self.beat_offset
+    }
+
+    /// [`Engine::state`] with our own beat numbering.
+    pub fn local(&self) -> LocalBeats {
+        LocalBeats { state: self.state(), beat_offset: self.beat_offset }
     }
 
     /// Every peer heard and not yet forgotten, in node-id order.
@@ -514,6 +583,7 @@ impl Engine {
         self.session = session;
         self.timeline = timeline;
         self.start_stop = start_stop;
+        self.beat_offset = 0.0;
         self.xform = GhostXForm { intercept };
         self.measured_at = now;
         self.founder = false;
@@ -595,6 +665,7 @@ impl Engine {
         // does, so it reads as the session's age — what rule 5 compares.
         self.xform = GhostXForm { intercept: -now };
         self.timeline = Timeline::at(bpm, beat, 0);
+        self.beat_offset = 0.0;
         self.status = Status::Joined;
         vec![self.announce(now)]
     }
@@ -611,6 +682,7 @@ impl Engine {
         self.founder = false;
         self.xform = GhostXForm::default();
         self.start_stop = None;
+        self.beat_offset = 0.0;
         self.outranked.clear();
         self.last_announce = None;
         self.searching_since = now;
@@ -623,6 +695,92 @@ impl Engine {
             return Vec::new();
         }
         self.timeline = self.timeline.retempo(bpm, self.xform.host_to_ghost(at));
+        vec![self.announce(now)]
+    }
+
+    /// Ask for `beat` at host time `at` — Ableton's `requestBeatAtTime`,
+    /// the polite one (rule 7). Alone in the session it is
+    /// [`Engine::force_beat_at`]. With peers it moves the session nowhere
+    /// and broadcasts nothing: it renumbers *our* beats by a whole number
+    /// of `quantum`s, so `beat` falls at the first moment at or after `at`
+    /// when the session's phase is `beat`'s. Ignored until joined.
+    pub fn request_beat_at(
+        &mut self,
+        beat: f64,
+        at: Micros,
+        quantum: f64,
+        now: Micros,
+    ) -> Vec<Action> {
+        if self.status != Status::Joined {
+            return Vec::new();
+        }
+        if self.members() == 0 {
+            return self.force_beat_at(beat, at, quantum, now);
+        }
+        let session = self.timeline.beat_at(self.xform.host_to_ghost(at));
+        self.beat_offset = beat - next_phase_match(session, beat, quantum);
+        Vec::new()
+    }
+
+    /// Put `beat` at host time `at` for the whole session — Ableton's
+    /// `forceBeatAtTime`, the rude one (rule 7). The session's line moves
+    /// by less than half a `quantum`, so that every peer's phase at `at` is
+    /// `beat`'s, and is broadcast like a tempo change (same tempo, a new
+    /// anchor every peer adopts); our own beat at `at` is `beat` exactly.
+    /// It moves every other app's beat: a DJ sees the phase jump. A
+    /// `quantum` ≤ 0 has no phase to move, so only our numbering changes
+    /// and nothing is sent. Ignored until joined.
+    pub fn force_beat_at(
+        &mut self,
+        beat: f64,
+        at: Micros,
+        quantum: f64,
+        now: Micros,
+    ) -> Vec<Action> {
+        if self.status != Status::Joined {
+            return Vec::new();
+        }
+        self.place(self.timeline, beat, at, quantum, now)
+    }
+
+    /// A new tempo and [`Engine::force_beat_at`] in one commit: the line
+    /// re-tempoed at `at`, then moved so `beat` lands there. One
+    /// broadcast, so no peer ever sees the tempo without the phase.
+    /// Ignored until joined.
+    pub fn propose_timeline(
+        &mut self,
+        bpm: f64,
+        beat: f64,
+        at: Micros,
+        quantum: f64,
+        now: Micros,
+    ) -> Vec<Action> {
+        if self.status != Status::Joined {
+            return Vec::new();
+        }
+        let line = self.timeline.retempo(bpm, self.xform.host_to_ghost(at));
+        self.place(line, beat, at, quantum, now)
+    }
+
+    /// Make `line`, moved so that `beat`'s phase is the session's at `at`,
+    /// the session's line, and number our beats so `beat` is ours there.
+    fn place(
+        &mut self,
+        line: Timeline,
+        beat: f64,
+        at: Micros,
+        quantum: f64,
+        now: Micros,
+    ) -> Vec<Action> {
+        let ghost = self.xform.host_to_ghost(at);
+        let session = line.beat_at(ghost);
+        let lands = closest_phase_match(session, beat, quantum);
+        self.beat_offset = beat - lands;
+        let line = line.shifted(lands - session);
+        if line == self.timeline {
+            return Vec::new(); // nothing the session would see
+        }
+        self.timeline = line.committed_after(ghost, &self.timeline);
         vec![self.announce(now)]
     }
 
@@ -1105,11 +1263,195 @@ mod tests {
         assert!((other.state().tempo() - 126.0).abs() < 1e-3);
     }
 
+    fn close(a: f64, b: f64) -> bool {
+        (a - b).abs() < 1e-5
+    }
+
+    /// Is `a` the same beat as `b` in `quantum` — equal phase?
+    fn in_phase(a: f64, b: f64, quantum: f64) -> bool {
+        let d = (a - b).rem_euclid(quantum);
+        d < 1e-5 || quantum - d < 1e-5
+    }
+
+    /// Alone, forcing a beat remaps the session: the beat lands at `at`,
+    /// the tempo stays, and the new line is announced, superseding the old.
+    #[test]
+    fn forcing_a_beat_while_alone_moves_the_session() {
+        let (mut e, _) = found(0);
+        let at = 5_150_000; // session beat 8.3 at 120 BPM (founded at 1 s)
+        let old = e.local().state.timeline;
+        assert!(close(e.local().beat_at(at), 8.3));
+        let said = e.force_beat_at(0.0, at, 4.0, at);
+        let [Action::Broadcast(m)] = said.as_slice() else { panic!("{said:?}") };
+        let s = e.local();
+        assert_eq!(m.timeline(), Some(s.state.timeline), "the new line is what goes out");
+        assert!(s.state.timeline.newer_than(&old));
+        assert!((s.state.tempo() - 120.0).abs() < 1e-9, "same tempo");
+        assert!(close(s.beat_at(at), 0.0), "{}", s.beat_at(at));
+        assert!(close(s.phase_at(at, 4.0), 0.0));
+        // The session's line moved by -0.3 beat (nearest bar line, 8),
+        // and our numbering by the two bars between 8 and 0.
+        assert!(close(s.state.beat_at(at), 8.0));
+        assert!(close(s.beat_offset, -8.0));
+        assert!((s.host_at_beat(0.0) - at).abs() <= 1);
+        assert!(close(s.next_boundary(at + 1, 4.0), 4.0));
+        // Alone, the polite request is the same thing.
+        let (mut r, _) = found(0);
+        assert_eq!(r.request_beat_at(0.0, at, 4.0, at).len(), 1);
+        assert_eq!(r.local().state.timeline, s.state.timeline);
+        assert_eq!(r.local().beat_offset, s.beat_offset);
+    }
+
+    /// With a peer, forcing moves the peer's phase too: after one
+    /// announcement its beat at `at` is the forced beat, modulo the
+    /// quantum, and they agree on the phase from then on. Either peer may
+    /// force, and a force that moves the beat back still wins.
+    #[test]
+    fn forcing_a_beat_with_a_peer_moves_its_phase() {
+        for (joiner_forces, q) in [(false, 4.0), (true, 4.0), (false, 3.0), (true, 1.0)] {
+            let (mut founder, mut joiner) = joined_pair();
+            let at = 3_123_000;
+            // A tempo change (to the same tempo) anchored at `at`: every
+            // force below lands less than a beat past that anchor (some
+            // behind it), so it must re-anchor one beat on to be adopted.
+            let anchor = founder.propose_tempo(120.0, at, at - 60_000);
+            deliver(&anchor, &mut joiner, 1, at - 59_000);
+            let beat = if joiner_forces { 1.0 } else { 6.75 };
+            let (forcer, other) = if joiner_forces {
+                (&mut joiner, &mut founder)
+            } else {
+                (&mut founder, &mut joiner)
+            };
+            let said = forcer.force_beat_at(beat, at, q, at - 50_000);
+            assert_eq!(broadcasts(said.clone()).len(), 1);
+            deliver(&said, other, 1, at - 49_000);
+            let (f, o) = (forcer.local(), other.local());
+            assert_eq!(f.state.timeline, o.state.timeline, "adopted");
+            assert!(close(f.beat_at(at), beat), "{} {}", f.beat_at(at), beat);
+            assert!(in_phase(o.beat_at(at), beat, q), "{} vs {beat} in {q}", o.beat_at(at));
+            assert_eq!(o.beat_offset, 0.0, "the other peer's numbering is its own");
+            for t in [at, at + 777_000, at + 60_000_000] {
+                assert!(close(f.phase_at(t, q), o.phase_at(t, q)), "{t}");
+            }
+        }
+    }
+
+    /// With a peer, the polite request moves nothing shared: it renumbers
+    /// our beats by whole quanta, so the beat lands at the next moment the
+    /// session's phase is its phase.
+    #[test]
+    fn requesting_a_beat_with_a_peer_only_renumbers_ours() {
+        let (founder, mut joiner) = joined_pair();
+        let at = 3_150_000; // session beat 4.3
+        let before = joiner.local().state.timeline;
+        assert!(joiner.request_beat_at(0.0, at, 4.0, at).is_empty(), "nothing to say");
+        let s = joiner.local();
+        assert_eq!(s.state.timeline, before, "the session did not move");
+        assert!(close(s.beat_offset, -8.0), "two bars: {}", s.beat_offset);
+        // Beat 0 lands at the next downbeat, session beat 8, at 5 s.
+        assert!((s.host_at_beat(0.0) - 5_000_000).abs() <= 1);
+        assert!(close(s.beat_at(5_000_000), 0.0));
+        for t in [at, 5_000_000, 9_999_999] {
+            assert!(close(s.phase_at(t, 4.0), founder.local().phase_at(t, 4.0)));
+            assert!(in_phase(s.beat_at(t), founder.local().beat_at(t), 4.0));
+        }
+        assert_eq!(founder.local().beat_offset, 0.0);
+        // A later announcement leaves the renumbering alone; leaving drops it.
+        let alive = [Action::Broadcast(founder.message(DiscoveryKind::Alive))];
+        deliver(&alive, &mut joiner, 1, 4_000_000);
+        assert!(close(joiner.local().beat_offset, -8.0));
+        joiner.leave(5_000_000);
+        assert_eq!(joiner.local().beat_offset, 0.0);
+    }
+
+    /// Force and tempo changes compose, in either order: a tempo change
+    /// after a force keeps the forced beat where it is (the beat at the
+    /// change does not jump), and a force after a tempo change lands at
+    /// the new tempo. The peer follows both.
+    #[test]
+    fn forcing_a_beat_across_a_tempo_change() {
+        let (mut founder, mut joiner) = joined_pair();
+        let at = 3_000_000;
+        let forced = founder.force_beat_at(2.5, at, 4.0, at);
+        deliver(&forced, &mut joiner, 1, at + 100);
+        assert!(close(founder.local().beat_at(at), 2.5), "as forced");
+        assert!(close(joiner.local().phase_at(at, 4.0), 2.5));
+        let tempo = founder.propose_tempo(90.0, at + 1_000_000, at + 1_000_000);
+        deliver(&tempo, &mut joiner, 1, at + 1_000_100);
+        let (f, j) = (founder.local(), joiner.local());
+        assert!((j.state.tempo() - 90.0).abs() < 1e-3);
+        assert!(close(f.beat_at(at + 1_000_000), 4.5), "two beats at 120, then the change");
+        assert!(close(f.beat_at(at + 3_000_000), 7.5), "then three at 90");
+        assert!(close(j.phase_at(at + 3_000_000, 4.0), 3.5));
+        // Now force again, at the new tempo.
+        let t2 = at + 5_000_000;
+        let forced = joiner.force_beat_at(0.0, t2, 4.0, t2);
+        deliver(&forced, &mut founder, 2, t2 + 100);
+        let (f, j) = (founder.local(), joiner.local());
+        assert!((f.state.tempo() - 90.0).abs() < 1e-3, "the tempo kept");
+        assert!(close(j.beat_at(t2), 0.0));
+        assert!(close(f.phase_at(t2, 4.0), 0.0));
+        assert!(close(f.beat_at(t2 + 2_000_000) - f.beat_at(t2), 3.0), "at 90");
+    }
+
+    /// A new tempo and a new phase in one commit: one broadcast, and the
+    /// peer, hearing it, goes straight to both — it never holds a line
+    /// with one and not the other.
+    #[test]
+    fn proposing_a_timeline_is_one_broadcast() {
+        let (mut founder, mut joiner) = joined_pair();
+        let at = 3_400_000;
+        let said = founder.propose_timeline(132.0, 1.0, at, 4.0, at - 20_000);
+        let [Action::Broadcast(m)] = said.as_slice() else { panic!("{said:?}") };
+        assert!((m.timeline().unwrap().bpm() - 132.0).abs() < 1e-3);
+        let m = Discovery::decode(&m.encode()).unwrap();
+        joiner.on_discovery(addr(1), &m, at - 19_000);
+        assert_eq!(
+            joiner.local().state.timeline,
+            founder.local().state.timeline,
+            "one step, to the final line"
+        );
+        let (f, j) = (founder.local(), joiner.local());
+        assert!((j.state.tempo() - 132.0).abs() < 1e-3);
+        assert!(close(f.beat_at(at), 1.0));
+        assert!(close(j.phase_at(at, 4.0), 1.0));
+        assert!(close(j.beat_at(at + 1_000_000) - j.beat_at(at), 2.2), "132 BPM from at");
+    }
+
+    /// The forced line crosses the wire byte for byte, and what decodes
+    /// is what the forcer holds.
+    #[test]
+    fn a_forced_timeline_round_trips_the_wire() {
+        let (mut e, _) = found(0);
+        let said = e.propose_timeline(87.5, -3.25, 2_345_678, 3.0, 2_000_000);
+        let [Action::Broadcast(m)] = said.as_slice() else { panic!("{said:?}") };
+        let bytes = m.encode();
+        let back = Discovery::decode(&bytes).unwrap();
+        assert_eq!(&back, m);
+        assert_eq!(back.encode(), bytes);
+        assert_eq!(back.timeline(), Some(e.local().state.timeline));
+    }
+
+    /// Forcing with no grid (quantum 0) has no phase to move: only our
+    /// numbering changes, and nothing is sent.
+    #[test]
+    fn forcing_with_no_quantum_only_renumbers() {
+        let (mut e, _) = found(0);
+        let old = e.local().state.timeline;
+        assert!(e.force_beat_at(100.0, 3_000_000, 0.0, 3_000_000).is_empty());
+        assert_eq!(e.local().state.timeline, old);
+        assert!(close(e.local().beat_at(3_000_000), 100.0));
+    }
+
     #[test]
     fn nothing_is_proposed_before_joining() {
         let mut e = Engine::new(JOINER, Config::default(), 0);
         assert!(e.propose_tempo(100.0, 0, 0).is_empty());
         assert!(e.propose_start_stop(true, 0, 0).is_empty());
+        assert!(e.request_beat_at(1.0, 0, 4.0, 0).is_empty());
+        assert!(e.force_beat_at(1.0, 0, 4.0, 0).is_empty());
+        assert!(e.propose_timeline(100.0, 1.0, 0, 4.0, 0).is_empty());
+        assert_eq!(e.beat_offset(), 0.0);
         assert_eq!(e.ghost(0), None, "no ghost time to answer a ping with");
     }
 }

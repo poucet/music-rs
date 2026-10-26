@@ -91,6 +91,31 @@ impl Timeline {
     pub fn retempo(&self, bpm: f64, ghost: Micros) -> Self {
         Timeline::at(bpm, self.beat_at(ghost), ghost)
     }
+
+    /// The same tempo, every instant reading `beats` more — a phase shift
+    /// when `beats` is not a whole quantum.
+    pub fn shifted(&self, beats: f64) -> Self {
+        Timeline { beat_origin: self.beat_origin + (beats * MICROBEATS).round() as i64, ..*self }
+    }
+
+    /// This line, re-anchored so that it supersedes `previous`
+    /// ([`Timeline::newer_than`]) — what a peer commits when it moves the
+    /// session's line. The anchor is the line's point at ghost time
+    /// `ghost`, or, if that is not at least one beat past `previous`'s
+    /// beat origin, the point one beat past it: Ableton's
+    /// `updateSessionTimelineFromClient` rule, so that every peer, an
+    /// Ableton one included, adopts the change whatever beat it lands on.
+    /// The line itself — tempo and the beat at every instant — is
+    /// unchanged, to within a µs of rounding.
+    pub fn committed_after(&self, ghost: Micros, previous: &Timeline) -> Self {
+        let floor = previous.beat_origin + MICROBEATS as i64;
+        let here = (self.beat_at(ghost) * MICROBEATS).round() as i64;
+        if here >= floor {
+            return Timeline { beat_origin: here, time_origin: ghost, ..*self };
+        }
+        let time_origin = self.ghost_at(floor as f64 / MICROBEATS);
+        Timeline { beat_origin: floor, time_origin, ..*self }
+    }
 }
 
 /// Host time → ghost time. A pure offset: both clocks run at a second a
@@ -124,6 +149,24 @@ pub struct StartStop {
 /// §7). A quantum ≤ 0 means no grid: the phase is always 0.
 pub fn phase(beat: f64, quantum: f64) -> f64 {
     if quantum > 0.0 { beat.rem_euclid(quantum) } else { 0.0 }
+}
+
+/// The first beat at or after `beat` whose phase in `quantum` is
+/// `target`'s — Link's `nextPhaseMatch`. A quantum ≤ 0 has no phase to
+/// match: `beat` itself.
+pub fn next_phase_match(beat: f64, target: f64, quantum: f64) -> f64 {
+    if quantum > 0.0 {
+        beat + (phase(target, quantum) - phase(beat, quantum)).rem_euclid(quantum)
+    } else {
+        beat
+    }
+}
+
+/// The beat nearest `beat` whose phase in `quantum` is `target`'s, at
+/// most half a quantum away (a tie goes back) — Link's
+/// `closestPhaseMatch`. A quantum ≤ 0: `beat` itself.
+pub fn closest_phase_match(beat: f64, target: f64, quantum: f64) -> f64 {
+    if quantum > 0.0 { next_phase_match(beat - 0.5 * quantum, target, quantum) } else { beat }
 }
 
 /// The first quantum boundary at or after `beat`.
@@ -180,6 +223,39 @@ mod tests {
             .filter(|b| phase(*b, 3.0) == 0.0 && phase(*b, 4.0) == 0.0)
             .collect();
         assert_eq!(shared, vec![0.0, 12.0, 24.0]);
+    }
+
+    #[test]
+    fn phase_matches_next_and_closest() {
+        assert_eq!(next_phase_match(9.5, 1.0, 4.0), 13.0);
+        assert_eq!(next_phase_match(9.0, 1.0, 4.0), 9.0, "a match is its own next");
+        assert_eq!(next_phase_match(9.5, -0.5, 4.0), 11.5);
+        assert_eq!(closest_phase_match(9.5, 1.0, 4.0), 9.0);
+        assert_eq!(closest_phase_match(9.5, 0.0, 4.0), 8.0);
+        assert_eq!(closest_phase_match(10.5, 0.0, 4.0), 12.0);
+        assert_eq!(closest_phase_match(10.0, 0.0, 4.0), 8.0, "half way: back");
+        assert_eq!(closest_phase_match(10.1, 0.0, 4.0), 12.0);
+        assert_eq!(closest_phase_match(7.3, 2.0, 0.0), 7.3, "no grid, no match to make");
+        assert_eq!(next_phase_match(7.3, 2.0, -1.0), 7.3);
+    }
+
+    #[test]
+    fn a_committed_line_supersedes_the_previous_and_keeps_its_beats() {
+        let old = Timeline::at(120.0, 100.0, 50_000_000);
+        // A line one beat behind the old one, anchored where it is ahead.
+        let back = old.shifted(-1.0);
+        let c = back.committed_after(60_000_000, &old);
+        assert!(c.newer_than(&old));
+        assert_eq!(c.time_origin, 60_000_000, "far enough past: anchored at the moment");
+        // Anchored at the old origin, the moved-back line is behind it:
+        // the anchor slides one beat past the old origin instead.
+        let c = back.committed_after(50_000_000, &old);
+        assert!(c.newer_than(&old));
+        assert_eq!(c.beat_origin, old.beat_origin + 1_000_000);
+        for g in [0, 50_000_000, 77_777_777] {
+            assert!((c.beat_at(g) - back.beat_at(g)).abs() < 1e-5, "same line at {g}");
+        }
+        assert_eq!(old.shifted(0.25).beat_at(50_000_000), 100.25);
     }
 
     #[test]
