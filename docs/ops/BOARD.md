@@ -18,6 +18,7 @@ Legend: 🚧 in flight · ✅ landed · ⏸ deferred.
 
 | Landed | Lane | What |
 |---|---|---|
+| 2026-10-26 | `LINK-PHASE` | `simply-link`: `request_beat_at` / `force_beat_at` / `propose_timeline` (Ableton's requestBeatAtTime/forceBeatAtTime semantics); local beat offset via `Link::local()` → `LocalBeats` (`SessionState` unchanged, additive → 1.1.0), shared phase; forced lines anchored ≥ 1 beat past the old so every peer adopts; for tussen's mesh bridge (C-5) |
 | 2026-10-21 | `LINK-STORM` | `simply-link`: a member's timeline is adopted only if newer (total order, Ableton's beat-origin rule), and adopted changes are re-announced at most every 50 ms. Ends the crossing-proposal multicast storm (~10k msgs/s per peer) that cost tussen's RTP ~45 % of its packets |
 | 2026-10-19 | `MUSIC-INSTALL` | `./install` POSIX script: release-builds every workspace binary (found via `cargo metadata`) into `~/.local/bin`, `--prefix`/`PREFIX`, `--list`, `--uninstall`, named subsets; README section |
 | 2026-10-19 | `LINK-JOIN` | `simply-link` pongs carry `sess` (Ableton peers can join our sessions); sessions merge by Link's rule (older wins); founder ghost starts at 0; Ableton-peer model tests |

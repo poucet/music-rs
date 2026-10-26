@@ -5,6 +5,56 @@ format is stated once in AGENTS.md §2.
 
 ## Unreleased
 
+#### `simply-link` can move the beat, not only the tempo (`LINK-PHASE`) · 2026-10-26 06:55 · rlkrvzmz
+
+- **Added: three verbs after Ableton's `SessionState`**, on `Link` and on the
+  pure `session::Engine`, with `propose_tempo`'s threading and its `at` (host
+  µs):
+  - `request_beat_at(beat, at, quantum)` (Ableton's `requestBeatAtTime`, the
+    polite one). Alone in a session, it moves the session so `beat` falls at
+    `at`. With peers it moves nothing they see and sends nothing: it renumbers
+    our own beats by whole quanta, so `beat` lands at the first moment from
+    `at` on when the session's phase is `beat`'s.
+  - `force_beat_at(beat, at, quantum)` (`forceBeatAtTime`, the rude one). It
+    shifts the session's line by less than half a quantum so `beat`'s phase
+    lands at `at` for **every** peer, and broadcasts it like a tempo change:
+    the same tempo, re-anchored. Our own beat at `at` is `beat` exactly.
+  - `propose_timeline(bpm, beat, at, quantum)`: tempo and force in one commit
+    and one broadcast, so no peer ever holds the new tempo without the new
+    phase. The bridge will mostly call this one.
+- **A forced line is anchored to be adopted.** Its beat origin is at least one
+  beat past the old line's (Ableton's `updateSessionTimelineFromClient` rule,
+  `Timeline::committed_after`), so every peer, an Ableton one included, takes
+  it even when the beat moves back. The line itself is unchanged by the
+  re-anchoring, to within a µs.
+- **Beat numbers are now each peer's own; the phase is shared.** The
+  engine keeps a local beat offset (our beats minus the session's, 0 until one
+  of the verbs sets it; reset on found, join, merge and leave).
+  `SessionState` is unchanged, field for field and answer for answer: it
+  still counts the session's beats. The offset-aware answers are on a new
+  `LocalBeats { state, beat_offset }` (`beat_at`, `host_at_beat`,
+  `next_boundary` in our beats; `phase_at` from the session, so the offset
+  never moves the phase), from `Link::local()` / `Engine::local()`, with
+  `Link::beat_offset()` / `Engine::beat_offset()` beside them. New helpers:
+  `timeline::{next_phase_match, closest_phase_match}`,
+  `Timeline::{shifted, committed_after}`.
+- **Forcing is anti-social; the crate docs say so.** It moves every other
+  app's beat: a DJ sees their phase jump mid-mix. tussen should force only when
+  a hub bridges its local Link session to the mesh timeline as that timeline's
+  follower, never by default.
+- **Additive only, so 1.1.0.** Nothing existing changed shape or meaning:
+  tussen's and flux's hand-built `SessionState { .. }` literals still compile,
+  and `tests/api_compat.rs` builds one with exactly 1.0.1's fields to keep it
+  that way.
+- Tests: 10 new unit tests: force alone, force with a peer (either peer
+  forcing, behind and past the old anchor, quanta 4, 3 and 1), request with a
+  peer, force across a tempo change, `propose_timeline` as one broadcast, a
+  wire round-trip, quantum 0, an Ableton-peer model adopting a forced beat, and
+  two for the timeline helpers. "Nothing before joining" now covers the three
+  verbs. Plus one two-peer loopback test on a private group with a TTL of 0:
+  force, request, then `propose_timeline`. And `tests/api_compat.rs`: a
+  1.0.1-shaped `SessionState` literal, and `LocalBeats` beside it.
+
 ## 1.0.1 — 2026-10-21
 
 #### `simply-link` peers no longer start a multicast storm when two tempo changes cross (`LINK-STORM`) · 2026-10-21 18:01 · ponkkpuy

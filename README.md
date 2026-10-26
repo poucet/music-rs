@@ -14,7 +14,7 @@ Canonical musical definitions, performance sequencing models, and tool contracts
 | --- | --- |
 | [`simply-fugue`](crates/simply-fugue) | Canonical Fugue musical performance schema, compact note notation (`[beat, "C3", duration, velocity, channel]`), pitch parsing (`C3` = 60), automation curves, and `render_audio` request/response types. |
 | [`simply-osc`](crates/simply-osc) | Open Sound Control 1.0 — typed messages, bundles, the wire format, address pattern matching, a thin UDP receiver, and the `simply-osc` command-line sender. Zero dependencies. |
-| [`simply-link`](crates/simply-link) | Ableton Link — an independent implementation of the protocol: peer discovery, the shared timeline, ghost-time measurement, quantum, and start/stop sync. |
+| [`simply-link`](crates/simply-link) | Ableton Link — an independent implementation of the protocol: peer discovery, the shared timeline, ghost-time measurement, quantum, start/stop sync, and moving the beat (`request_beat_at`, `force_beat_at`, `propose_timeline`). |
 | [`simply-midi`](crates/simply-midi) | MIDI 1.0 channel-voice decoding, and midir device input behind the `device` feature. |
 | [`simply-midi-clock`](crates/simply-midi-clock) | MIDI beat clock out: the real-time messages, the follower's position, sleep-then-spin pacing, and output-port selection. |
 | [`simply-link-midi`](crates/simply-link-midi) | The `simply-link` binary — an Ableton Link session out as MIDI beat clock, phase-aligned to the session's quantum. |

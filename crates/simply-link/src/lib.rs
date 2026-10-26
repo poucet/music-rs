@@ -27,6 +27,38 @@
 //! # Ok::<(), std::io::Error>(())
 //! ```
 //!
+//! ## Moving the beat
+//!
+//! What peers share is the session's tempo and *phase*; the beat's number
+//! is each peer's own. [`SessionState`] answers in the session's beats, as
+//! it always has; [`Link::local`] gives a [`LocalBeats`] that answers in
+//! this peer's ([`LocalBeats::beat_offset`]). Three verbs move it,
+//! after Ableton's `SessionState` (rule 7 in [`session`]); `at` is host
+//! µs, as for [`Link::propose_tempo`]:
+//!
+//! * [`Link::request_beat_at`]`(beat, at, quantum)` — Ableton's
+//!   `requestBeatAtTime`, the polite one. Alone in the session, it moves
+//!   the session so `beat` falls at `at`. With peers it moves nothing they
+//!   see: it renumbers our beats by whole quanta, so `beat` falls at the
+//!   first moment from `at` on when the session's phase is `beat`'s.
+//! * [`Link::force_beat_at`]`(beat, at, quantum)` — Ableton's
+//!   `forceBeatAtTime`, the rude one. It shifts the session's line by
+//!   less than half a quantum so `beat`'s phase falls at `at` for **every**
+//!   peer, and broadcasts it like a tempo change (same tempo, a new anchor
+//!   every peer, Ableton's included, adopts); our own beat at `at` is
+//!   `beat` exactly.
+//! * [`Link::propose_timeline`]`(bpm, beat, at, quantum)` — a tempo and a
+//!   force in one commit and one broadcast: no peer ever holds the new
+//!   tempo without the new phase.
+//!
+//! **Forcing is anti-social.** It moves every other app's beat: a DJ in
+//! djay or Live sees their phase jump, mid-mix. Ableton reserves it for
+//! "certain special circumstances". In tussen that circumstance is one: a
+//! hub that bridges its local Link session to the mesh timeline as that
+//! timeline's *follower* — where the mesh, not the room, owns the beat. It
+//! is never a default, and never what a hub that merely joins a room does;
+//! there, `request_beat_at` (or nothing) is right.
+//!
 //! Provenance and what is and is not verified against real peers:
 //! `docs/research/engine/ableton-link.md`.
 
