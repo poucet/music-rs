@@ -5,6 +5,8 @@ format is stated once in AGENTS.md §2.
 
 ## Unreleased
 
+## 1.1.0 — 2026-10-26
+
 #### `simply-link` can move the beat, not only the tempo (`LINK-PHASE`) · 2026-10-26 06:55 · rlkrvzmz
 
 - **Added: three verbs after Ableton's `SessionState`**, on `Link` and on the
