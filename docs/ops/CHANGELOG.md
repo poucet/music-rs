@@ -5,6 +5,20 @@ format is stated once in AGENTS.md §2.
 
 ## Unreleased
 
+#### Audio capture, device selection and audiowatch live here · 2026-11-09 16:39 · rzsplyly
+
+- **Added: `simply-audio-device` and `simply-audio-capture`**, the audio half
+  of the floor beside MIDI, Link and OSC: devices by name, their inputs, what an
+  output or an application plays (CoreAudio process taps, macOS 14.2+),
+  resampled to the rate asked for. Same API as audiowatch's `main` at
+  `dcca30ef`; tussen can take them from this repository by git rev.
+- **Added: `audiowatch`**, the tool (macOS): names the process that put audio
+  on an output, and records any device's channels to WAV over MCP or a command
+  line; with `audiowatch-record` and `audiowatch-clock` beneath it.
+  `cargo build -p audiowatch --release`.
+- Off macOS everything still builds: the taps are absent, `audiowatch` keeps
+  only its recorder, and `./install` leaves it out.
+
 ## 1.1.0 — 2026-10-26
 
 #### `simply-link` can move the beat, not only the tempo (`LINK-PHASE`) · 2026-10-26 06:55 · rlkrvzmz

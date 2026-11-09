@@ -144,6 +144,10 @@ Colocated git+jj; use **jj, never git** (a `git commit` after `jj new` lands on 
 detached head). Trunk is the `main` bookmark. Lane workspaces are
 `.workspaces/<lane>/`, gitignored, inside the repo.
 
+**Agents may push `main`** (`jj git push --remote origin --bookmark main`),
+once it is gated, so a consumer can pin a pushed rev. Nothing else is pushed:
+no other bookmark, no tags, no `--all`.
+
 **Changing the wire format is a cross-repo change.** `simply-fugue` is a
 contract, so a change to it is not done when this repo is green — it is done
 when every consumer in the table above still builds and its own gates pass.
