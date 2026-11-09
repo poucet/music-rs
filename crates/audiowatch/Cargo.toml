@@ -1,0 +1,46 @@
+[package]
+name = "audiowatch"
+description = "Watches which processes put audio on this Mac's CoreAudio output devices, and records any device's channels to WAV for an agent."
+version.workspace = true
+edition = "2021"
+license.workspace = true
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "audiowatch"
+path = "src/main.rs"
+
+[features]
+default = ["midi-clock"]
+# Recording in time with a MIDI clock: `bars` on the MCP `record` tool, and
+# `audiowatch rec clocks` / `record --bars`. Without it the recorder takes
+# seconds only and builds no MIDI input.
+midi-clock = ["dep:audiowatch-clock"]
+
+[dependencies]
+# The watcher (src/main.rs and its modules) uses none of these: it reaches
+# CoreAudio, libproc and libc through the declarations in src/sys.rs. They
+# are the recorder's: `audiowatch --mcp` and `audiowatch rec`.
+audiowatch-record = { workspace = true, features = ["schema"] }
+audiowatch-clock = { workspace = true, features = ["schema"], optional = true }
+# The same tag tussen takes, so a build that has both resolves one copy.
+simply-api = { git = "https://github.com/poucet/simply-api", tag = "v0.1.1" }
+async-trait = "0.1"
+axum = "0.8"
+rmcp = { version = "3.1.4", features = ["server", "transport-streamable-http-server"] }
+schemars.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal"] }
+
+[dev-dependencies]
+rmcp = { version = "3.1.4", features = [
+    "client",
+    "transport-streamable-http-client",
+    "transport-streamable-http-client-reqwest",
+] }
+tokio-util = "0.7"
+hound.workspace = true

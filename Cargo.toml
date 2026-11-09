@@ -33,6 +33,16 @@ if-addrs = "0.15"
 # instead of cutting both off mid-run.
 ctrlc = "3"
 
+# The audio floor (moved from audiowatch). cpal: the cross-platform device
+# layer simply-audio-device, simply-audio-capture and audiowatch-record share.
+cpal = "0.18.2"
+# hound: the WAV audiowatch-record writes and audiowatch's tests read back.
+hound = "3"
+
 # Intra-workspace
 simply-link = { path = "crates/simply-link" }
 simply-midi-clock = { path = "crates/simply-midi-clock" }
+simply-audio-device = { path = "crates/simply-audio-device" }
+simply-audio-capture = { path = "crates/simply-audio-capture" }
+audiowatch-record = { path = "crates/audiowatch-record" }
+audiowatch-clock = { path = "crates/audiowatch-clock" }
