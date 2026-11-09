@@ -7,7 +7,6 @@
 //! disjoint variant set, `CancelMode` and `StartMode` are not even about the
 //! same subject on the two sides, and its `FugueDefinition` is flat where this
 //! one nests. Converging it would flip three defaults under a live sequencer.
-//! See `music`'s `docs/ops/DECISIONS.md`.
 //!
 //! What this model does carry from Droplets, because it was free: `Times(n)`
 //! and `Bars(n)`, the `"forever"` / `"immediate"` / `"cc"` spellings as
