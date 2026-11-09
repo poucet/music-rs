@@ -104,9 +104,12 @@
 //! This crate knows nothing of the program that uses it, so it can be copied
 //! between programs verbatim.
 
+// Only the macOS taps drive these; their types are the API everywhere, and
+// their tests (against fakes) run everywhere.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 mod apps;
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 mod channels;
-// Only the macOS tap drives it; its tests run everywhere.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 mod default_out;
 mod resample;
@@ -336,6 +339,7 @@ impl Capture {
         if let Running::Default(t) = &self.running {
             return t.now().error;
         }
+        #[cfg_attr(not(target_os = "macos"), allow(unused_mut))]
         let mut slot = self.error.lock().unwrap_or_else(|e| e.into_inner());
         #[cfg(target_os = "macos")]
         if let (None, Running::Tap(t)) = (&*slot, &self.running) {
@@ -346,6 +350,8 @@ impl Capture {
 }
 
 impl Drop for Capture {
+    // Off macOS a device's inputs are the only way to run.
+    #[cfg_attr(not(target_os = "macos"), allow(irrefutable_let_patterns))]
     fn drop(&mut self) {
         if let Running::Input { stop, thread, .. } = &mut self.running {
             drop(stop.take());

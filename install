@@ -4,7 +4,7 @@
 #   ./install                     build + install every binary into ~/.local/bin
 #   ./install simply-link           just the named binaries
 #   ./install --prefix DIR ...    install into DIR/bin instead (or PREFIX=DIR)
-#   ./install --list              print the binaries this workspace builds
+#   ./install --list              print the binaries this workspace installs here
 #   ./install --uninstall [BIN…]  remove them from the prefix again
 #
 # The binaries are found with `cargo metadata`, never listed here, so a new
@@ -66,6 +66,19 @@ all=$(printf '%s\n' "$metadata" |
 target_dir=$(printf '%s\n' "$metadata" |
 	sed 's/.*"target_directory":"\([^"]*\)".*/\1/')
 [ -n "$all" ] || die "cargo metadata reported no binary targets"
+
+# Binaries that are tools for macOS only: they build elsewhere (audiowatch's
+# recorder runs anywhere) but what they are for does not, so they are not
+# installed there.
+macos_only='audiowatch'
+if [ "$(uname -s)" != Darwin ]; then
+	for n in $names; do
+		case " $macos_only " in *" $n "*) die "'$n' is a macOS tool" ;; esac
+	done
+	for m in $macos_only; do
+		all=$(printf '%s\n' "$all" | grep -vx "$m" || true)
+	done
+fi
 
 if [ "$mode" = list ]; then
 	printf '%s\n' "$all"
