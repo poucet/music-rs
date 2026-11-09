@@ -21,21 +21,45 @@ window. Live state is in @docs/ops/BOARD.md.
 **Musical vocabulary shared by more than one repo.** A crate earns a place here
 when two projects would otherwise each keep a copy of it and drift. It is not a
 home for generic infrastructure — an MCP-tool derive or an undo tree is shared
-too, and belongs somewhere that is not `music`.
+too, and belongs somewhere that is not `music` (it is in `simply-api`).
+
+That vocabulary has a **floor**: the protocols and devices music arrives
+through. MIDI, Link and OSC are one half of it; **audio capture and device
+selection** are the other — naming a device, opening its inputs, tapping what
+an output or an application plays, resampled to the rate asked for. `tussen`
+takes that half from here, and so does `audiowatch`, the tool that lives here
+beside it and is its first user.
+
+**The workspace builds off macOS.** CoreAudio code (the process taps in
+`simply-audio-capture`, the `audiowatch` watcher) is behind
+`cfg(target_os = "macos")`; off macOS the taps are absent and `audiowatch`
+keeps only its recorder. `cargo check --workspace --all-targets --target
+x86_64-pc-windows-msvc` is the check; there is no CI to run it for you.
 
 ## Gates
 
-Both, **unfiltered**, reported verbatim with counts, and re-run *after* the final
-rebase:
+All three, **unfiltered**, reported verbatim with counts, and re-run *after* the
+final rebase:
 
     cargo test --workspace
     cargo clippy --workspace --all-targets     # 0 warnings
+    cargo fmt --all --check
 
 ## The crates
 
 | crate | what it is |
 |---|---|
 | `simply-fugue` | the fugue wire format: `CompositeFugue`, events, modes, note-name parsing (`C3` = 60), and the `render_audio` request/response pair |
+| `simply-midi` | MIDI 1.0 channel-voice decoding; midir device input behind `device` |
+| `simply-midi-clock` | MIDI beat clock out: the messages, the follower's position, the pacing, output-port selection |
+| `simply-link` | Ableton Link, an independent implementation of the protocol |
+| `simply-link-midi` | the `simply-link` binary: a Link session out as MIDI beat clock |
+| `simply-osc` | Open Sound Control 1.0, and the `simply-osc` sender |
+| `simply-audio-device` | cpal device enumeration and selection by name, cpal's naming quirks in one place |
+| `simply-audio-capture` | capture any device by name: its inputs, or what an output plays through a CoreAudio process tap; or applications, followed as they come and go; resampled to the rate asked for |
+| `audiowatch-record` | record any channels of any device to 32-bit float WAV, for a length or a window of host time |
+| `audiowatch-clock` | record in time with a MIDI clock: the downbeats off a MIDI input, takes trimmed to bars |
+| `audiowatch` | the tool: names the process that put audio on an output, and serves the recorder over MCP and a command line (the watcher is macOS; the recorder runs anywhere) |
 
 **`simply-fugue` depends on `serde`, `serde_json` and `schemars`, and on nothing
 else, ever.** It is a pure-data contract two hosts deserialize the same JSON
@@ -48,6 +72,7 @@ simply-fugue` is the check.
 |---|---|
 | `~/projects/simply/nexus` | `render_audio` / `play` over a hosted VST3/CLAP plugin |
 | `~/projects/simply/flux` | `render_audio` over a flux patch — the same JSON, the same tool name |
+| `~/projects/simply/tussen` | `simply-audio-capture` and `simply-audio-device`: the hub's audio inputs, device taps and app taps, by git rev |
 
 **`droplets` is deliberately not a consumer.** It keeps its own fugue model,
 which differs on every mode enum and on the whole shape of `FugueDefinition`;
@@ -125,6 +150,10 @@ when every consumer in the table above still builds and its own gates pass.
 Additive-and-defaulted (`#[serde(default)]`, `#[serde(alias)]`) is the way to
 change it without a flag day; anything that alters what existing JSON *means*
 is a decision, not a refactor, and belongs in @docs/ops/DECISIONS.md first.
+
+The audio crates are an API, not a wire format, and tussen pins them by git
+rev, so a change to them breaks nothing until tussen moves its rev — and then
+it is tussen's gates that say whether it still builds.
 
 ## Recovery
 

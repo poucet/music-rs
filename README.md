@@ -18,15 +18,21 @@ Canonical musical definitions, performance sequencing models, and tool contracts
 | [`simply-midi`](crates/simply-midi) | MIDI 1.0 channel-voice decoding, and midir device input behind the `device` feature. |
 | [`simply-midi-clock`](crates/simply-midi-clock) | MIDI beat clock out: the real-time messages, the follower's position, sleep-then-spin pacing, and output-port selection. |
 | [`simply-link-midi`](crates/simply-link-midi) | The `simply-link` binary — an Ableton Link session out as MIDI beat clock, phase-aligned to the session's quantum. |
+| [`simply-audio-device`](crates/simply-audio-device) | cpal audio-device helpers: name enumeration and named-device selection. |
+| [`simply-audio-capture`](crates/simply-audio-capture) | Capture any audio device by name: its inputs, or what an output-only device plays through a CoreAudio process tap; or applications, followed as they come and go; resampled to the rate asked for. The taps are macOS 14.2+. |
+| [`audiowatch-record`](crates/audiowatch-record) | Record any channel pair of any audio device to 32-bit float WAV, for a length or trimmed to a window of host time. |
+| [`audiowatch-clock`](crates/audiowatch-clock) | Record in time with a MIDI clock: its downbeats off a MIDI input, takes trimmed to the bars between them. |
+| [`audiowatch`](crates/audiowatch) | The `audiowatch` binary: the watcher is macOS only, the recorder runs anywhere. |
 
 ## Binaries
 
 | Binary | What it does | Run |
 | --- | --- | --- |
 | `simply-link` | Joins the Ableton Link session on your network and sends MIDI beat clock to one output port, in time and in phase — a drum machine's bar one lands on the session's downbeat. Follows only; never changes the tempo or the transport. | `cargo run -p simply-link-midi -- run --port NAME` (or `cargo install --path crates/simply-link-midi`) |
+| `audiowatch` | Names the process that just put audio on one of this Mac's outputs, short-lived ones too; and records any device's channels to WAV, for an agent over MCP or from the command line. The watcher is macOS only; `./install` installs it on macOS only. | `cargo build -p audiowatch --release` |
 | `simply-osc` | Sends one OSC message over UDP from the command line — types inferred, `i:`/`f:`/`s:` prefixes to force one. The by-hand half of `simply-osc`; the library receives. | `cargo run -p simply-osc -- /address 0.5` (or `cargo install --path crates/simply-osc`) |
 
-Each crate's own README carries the details: [`simply-link-midi`](crates/simply-link-midi/README.md), [`simply-osc`](crates/simply-osc/README.md).
+Each crate's own README carries the details: [`simply-link-midi`](crates/simply-link-midi/README.md), [`simply-osc`](crates/simply-osc/README.md), [`audiowatch`](crates/audiowatch/README.md).
 
 ### Installing them
 
