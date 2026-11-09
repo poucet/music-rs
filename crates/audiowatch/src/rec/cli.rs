@@ -114,19 +114,14 @@ fn parse(args: &[String]) -> Result<Command, String> {
             "--json" => json = true,
             "--seconds" | "-s" => {
                 let v = it.next().ok_or("--seconds needs a value")?;
-                let s: f64 = v
-                    .parse()
-                    .map_err(|_| format!("--seconds {v:?} is not a number"))?;
+                let s: f64 = v.parse().map_err(|_| format!("--seconds {v:?} is not a number"))?;
                 if !(s > 0.0 && s.is_finite()) {
                     return Err(format!("--seconds must be positive, not {v}"));
                 }
                 seconds = Some(s);
             }
             "--bars" | "-b" => {
-                bars = Some(positive_int(
-                    "--bars",
-                    it.next().ok_or("--bars needs a value")?,
-                )?)
+                bars = Some(positive_int("--bars", it.next().ok_or("--bars needs a value")?)?)
             }
             "--beats-per-bar" => {
                 let v = it.next().ok_or("--beats-per-bar needs a value")?;
@@ -145,7 +140,7 @@ fn parse(args: &[String]) -> Result<Command, String> {
             "--take" | "-t" => takes.push(it.next().ok_or("--take needs a value")?.clone()),
             "--help" | "-h" => return Err(USAGE.into()),
             flag if flag.starts_with("--") => {
-                return Err(format!("unknown option {flag}\n\n{USAGE}"))
+                return Err(format!("unknown option {flag}\n\n{USAGE}"));
             }
             take => takes.push(take.to_string()),
         }
@@ -156,32 +151,18 @@ fn parse(args: &[String]) -> Result<Command, String> {
         Some("record") => {
             let length = match (seconds, bars) {
                 (Some(s), None) => Length::Seconds(s),
-                (None, Some(bars)) => Length::Bars {
-                    bars,
-                    beats_per_bar,
-                    clock,
-                    arm_timeout,
-                },
+                (None, Some(bars)) => Length::Bars { bars, beats_per_bar, clock, arm_timeout },
                 (Some(_), Some(_)) => return Err("give --seconds or --bars, not both".into()),
                 (None, None) => {
-                    return Err(
-                        "record needs --seconds N or --bars N: a recording here always \
+                    return Err("record needs --seconds N or --bars N: a recording here always \
                                 has a length"
-                            .into(),
-                    )
+                        .into());
                 }
             };
             if takes.is_empty() {
-                return Err(
-                    "record needs at least one TAKE, e.g. \"BlackHole 16ch:in:1-2\"".into(),
-                );
+                return Err("record needs at least one TAKE, e.g. \"BlackHole 16ch:in:1-2\"".into());
             }
-            Ok(Command::Record {
-                length,
-                dir,
-                json,
-                takes,
-            })
+            Ok(Command::Record { length, dir, json, takes })
         }
         _ => Err(USAGE.into()),
     }
@@ -191,20 +172,13 @@ fn side(label: &str, s: &Option<SideInfo>) -> String {
     match s {
         None => format!("{label}: —"),
         Some(s) => {
-            let rate = s
-                .current_rate
-                .map(|r| format!(" @ {r} Hz"))
-                .unwrap_or_default();
+            let rate = s.current_rate.map(|r| format!(" @ {r} Hz")).unwrap_or_default();
             let pairs: Vec<String> = s.pairs.iter().map(|p| p.to_string()).collect();
             format!(
                 "{label}: {} ch{rate} [{}] pairs {}",
                 s.channels,
                 s.formats.join("/"),
-                if pairs.is_empty() {
-                    "none".into()
-                } else {
-                    pairs.join(" ")
-                }
+                if pairs.is_empty() { "none".into() } else { pairs.join(" ") }
             )
         }
     }
@@ -216,11 +190,7 @@ fn print_devices(devices: &[DeviceInfo]) {
         println!("{}", d.name);
         println!("    {}", side("in ", &d.input));
         println!("    {}", side("out", &d.output));
-        println!(
-            "    record in: {}   record out: {}",
-            can(d.record_in),
-            can(d.record_out)
-        );
+        println!("    record in: {}   record out: {}", can(d.record_in), can(d.record_out));
         for note in &d.notes {
             println!("    note: {note}");
         }
@@ -230,10 +200,7 @@ fn print_devices(devices: &[DeviceInfo]) {
 fn print_results(results: &[TakeResult]) {
     for r in results {
         println!("{}", r.take.path);
-        println!(
-            "    {}  {} Hz  {:.3} s",
-            r.take.spec, r.take.sample_rate, r.duration_s
-        );
+        println!("    {}  {} Hz  {:.3} s", r.take.spec, r.take.sample_rate, r.duration_s);
         if let Some(s) = &r.sync {
             println!(
                 "    downbeat: {} frames trimmed, first frame {:+.3} frames from it",
@@ -283,40 +250,25 @@ fn run(command: Command) -> Result<(), String> {
         Command::List { json } => {
             let devices = record::list_devices();
             if json {
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(&devices).map_err(|e| e.to_string())?
-                );
+                println!("{}", serde_json::to_string_pretty(&devices).map_err(|e| e.to_string())?);
             } else {
                 print_devices(&devices);
             }
         }
         #[cfg(not(feature = "midi-clock"))]
-        Command::Clocks { .. }
-        | Command::Record {
-            length: Length::Bars { .. },
-            ..
-        } => {
+        Command::Clocks { .. } | Command::Record { length: Length::Bars { .. }, .. } => {
             return Err(NO_CLOCK.into());
         }
         #[cfg(feature = "midi-clock")]
         Command::Clocks { json } => {
             let ports = audiowatch_clock::port::scan().map_err(|e| e.to_string())?;
             if json {
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(&ports).map_err(|e| e.to_string())?
-                );
+                println!("{}", serde_json::to_string_pretty(&ports).map_err(|e| e.to_string())?);
             } else {
                 print_clocks(&ports);
             }
         }
-        Command::Record {
-            length: Length::Seconds(seconds),
-            dir,
-            json,
-            takes,
-        } => {
+        Command::Record { length: Length::Seconds(seconds), dir, json, takes } => {
             let specs = record::parse_takes(&takes).map_err(|e| e.to_string())?;
             let dir = std::path::absolute(&dir).unwrap_or(dir);
             if !json {
@@ -328,23 +280,14 @@ fn run(command: Command) -> Result<(), String> {
             }
             let results = record::record(&specs, &dir, seconds).map_err(|e| e.to_string())?;
             if json {
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(&results).map_err(|e| e.to_string())?
-                );
+                println!("{}", serde_json::to_string_pretty(&results).map_err(|e| e.to_string())?);
             } else {
                 print_results(&results);
             }
         }
         #[cfg(feature = "midi-clock")]
         Command::Record {
-            length:
-                Length::Bars {
-                    bars,
-                    beats_per_bar,
-                    clock,
-                    arm_timeout,
-                },
+            length: Length::Bars { bars, beats_per_bar, clock, arm_timeout },
             dir,
             json,
             takes,
@@ -360,21 +303,14 @@ fn run(command: Command) -> Result<(), String> {
                 );
             }
             let options = BarOptions {
-                plan: BarPlan {
-                    beats_per_bar,
-                    bars,
-                    max_take_ns: None,
-                },
+                plan: BarPlan { beats_per_bar, bars, max_take_ns: None },
                 arm_timeout: Duration::from_secs_f64(arm_timeout),
             };
             let done = audiowatch_clock::record_bars(&specs, &dir, clock.as_deref(), options)?;
             let outcome = done.outcome;
             if json {
                 let value = serde_json::json!({ "takes": outcome.takes, "clock": done.clock });
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(&value).map_err(|e| e.to_string())?
-                );
+                println!("{}", serde_json::to_string_pretty(&value).map_err(|e| e.to_string())?);
             } else {
                 print_results(&outcome.takes);
                 if let Some(c) = &done.clock {

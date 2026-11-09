@@ -16,23 +16,23 @@
 //! tap runs at its clock device's own rate.
 
 use std::collections::HashMap;
-use std::ffi::{c_void, CStr};
+use std::ffi::{CStr, c_void};
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
+use objc2::AnyThread;
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
-use objc2::AnyThread;
 use objc2_core_audio::*;
 use objc2_core_audio_types::{AudioBuffer, AudioBufferList, AudioTimeStamp, AudioTimeStampFlags};
 use objc2_core_foundation::CFDictionary;
 use objc2_foundation::{NSArray, NSDictionary, NSNumber, NSString, NSUUID};
 
 use crate::apps::{
-    self, AppInfo, AppStatus, AppTap, Backend, Follow, Mute, Proc, Stall, Target, STALL,
+    self, AppInfo, AppStatus, AppTap, Backend, Follow, Mute, Proc, STALL, Stall, Target,
 };
 use crate::channels::{AppSinks, ChannelsStatus, Split};
 use crate::default_out::{FollowDefault, Now, Outputs};
@@ -214,7 +214,7 @@ struct MachTimebaseInfo {
     denom: u32,
 }
 
-extern "C" {
+unsafe extern "C" {
     fn mach_timebase_info(info: *mut MachTimebaseInfo) -> i32;
 }
 
@@ -274,50 +274,52 @@ impl OutputTap {
         channels: usize,
         sink: &mut Option<Sink>,
     ) -> Result<(), Error> {
-        let uid = NSString::from_str(&clock.uid);
-        let mut tap_uids = Vec::new();
-        for desc in descriptions(kind)? {
-            tap_uids.push(create_tap(&desc, &mut self.taps)?);
-        }
-        let refs: Vec<&NSString> = tap_uids.iter().map(|u| &**u).collect();
-        self.aggregate = create_aggregate(&uid, &refs)?;
-        // The rate the IOProc runs at is the aggregate's, clocked by the
-        // tapped device. (The tap's own format property said 48000 for
-        // speakers running at 44100 — measured — so it isn't used.)
-        let device_rate: f64 = get(
-            self.aggregate,
-            kAudioDevicePropertyNominalSampleRate,
-            kAudioObjectPropertyScopeGlobal,
-        )?;
-        self.sample_rate = device_rate.round() as u32;
-
-        let mut tb = MachTimebaseInfo { numer: 1, denom: 1 };
-        if mach_timebase_info(&mut tb) != 0 || tb.denom == 0 {
-            tb = MachTimebaseInfo { numer: 1, denom: 1 };
-        }
-        let channels = channels.max(1);
-        let sink = sink.take().expect("the sink is handed over once");
-        self.ctx = Box::into_raw(Box::new(Ctx {
-            feed: Feed::new(sink, channels, self.sample_rate, rate),
-            channels,
-            rate: device_rate,
-            scratch: vec![0.0; MAP_FRAMES * channels],
-            numer: tb.numer as u64,
-            denom: tb.denom as u64,
-            calls: Arc::clone(&self.calls),
-            taps: refs.len(),
-        }));
-        check(
-            AudioDeviceCreateIOProcID(
+        unsafe {
+            let uid = NSString::from_str(&clock.uid);
+            let mut tap_uids = Vec::new();
+            for desc in descriptions(kind)? {
+                tap_uids.push(create_tap(&desc, &mut self.taps)?);
+            }
+            let refs: Vec<&NSString> = tap_uids.iter().map(|u| &**u).collect();
+            self.aggregate = create_aggregate(&uid, &refs)?;
+            // The rate the IOProc runs at is the aggregate's, clocked by the
+            // tapped device. (The tap's own format property said 48000 for
+            // speakers running at 44100 — measured — so it isn't used.)
+            let device_rate: f64 = get(
                 self.aggregate,
-                Some(io_proc),
-                self.ctx.cast(),
-                NonNull::from(&mut self.proc_id),
-            ),
-            "creating the tap IOProc",
-        )?;
-        check(AudioDeviceStart(self.aggregate, self.proc_id), "starting the tap")?;
-        Ok(())
+                kAudioDevicePropertyNominalSampleRate,
+                kAudioObjectPropertyScopeGlobal,
+            )?;
+            self.sample_rate = device_rate.round() as u32;
+
+            let mut tb = MachTimebaseInfo { numer: 1, denom: 1 };
+            if mach_timebase_info(&mut tb) != 0 || tb.denom == 0 {
+                tb = MachTimebaseInfo { numer: 1, denom: 1 };
+            }
+            let channels = channels.max(1);
+            let sink = sink.take().expect("the sink is handed over once");
+            self.ctx = Box::into_raw(Box::new(Ctx {
+                feed: Feed::new(sink, channels, self.sample_rate, rate),
+                channels,
+                rate: device_rate,
+                scratch: vec![0.0; MAP_FRAMES * channels],
+                numer: tb.numer as u64,
+                denom: tb.denom as u64,
+                calls: Arc::clone(&self.calls),
+                taps: refs.len(),
+            }));
+            check(
+                AudioDeviceCreateIOProcID(
+                    self.aggregate,
+                    Some(io_proc),
+                    self.ctx.cast(),
+                    NonNull::from(&mut self.proc_id),
+                ),
+                "creating the tap IOProc",
+            )?;
+            check(AudioDeviceStart(self.aggregate, self.proc_id), "starting the tap")?;
+            Ok(())
+        }
     }
 
     /// Stop the IOProc and hand back the sink it fed, if it has it.
@@ -394,74 +396,80 @@ impl Drop for OutputTap {
 /// takes the stream's own format, which the IOProc maps to the width asked
 /// for like a device's input (its first channels).
 unsafe fn descriptions(kind: &Kind) -> Result<Vec<Retained<CATapDescription>>, Error> {
-    let ids = |objects: &[u32]| {
-        let n: Vec<_> = objects.iter().map(|o| NSNumber::new_u32(*o)).collect();
-        NSArray::from_retained_slice(&n)
-    };
-    let alloc = CATapDescription::alloc;
-    let mut descs: Vec<(Retained<CATapDescription>, bool)> = Vec::new(); // (desc, mixdown)
-    let mute = match kind {
-        Kind::Device(d) => {
-            let uid = NSString::from_str(&d.uid);
-            let none = NSArray::<NSNumber>::new();
-            descs.push((
-                CATapDescription::initExcludingProcesses_andDeviceUID_withStream(
-                    alloc(),
-                    &none,
-                    &uid,
-                    0,
-                ),
-                true,
-            ));
-            Mute::Unmuted
-        }
-        Kind::Processes { targets, mute, .. } => {
-            for target in targets {
-                match target {
-                    Target::Processes(o) => descs.push((
-                        CATapDescription::initStereoMixdownOfProcesses(alloc(), &ids(o)),
-                        true,
-                    )),
-                    Target::AllExcept(o) => descs.push((
-                        CATapDescription::initStereoGlobalTapButExcludeProcesses(alloc(), &ids(o)),
-                        true,
-                    )),
-                    Target::OnDevice(o, uid) => {
-                        let uid_ns = NSString::from_str(uid);
-                        for stream in 0..output_streams(uid)? {
-                            let desc = CATapDescription::initWithProcesses_andDeviceUID_withStream(
+    unsafe {
+        let ids = |objects: &[u32]| {
+            let n: Vec<_> = objects.iter().map(|o| NSNumber::new_u32(*o)).collect();
+            NSArray::from_retained_slice(&n)
+        };
+        let alloc = CATapDescription::alloc;
+        let mut descs: Vec<(Retained<CATapDescription>, bool)> = Vec::new(); // (desc, mixdown)
+        let mute = match kind {
+            Kind::Device(d) => {
+                let uid = NSString::from_str(&d.uid);
+                let none = NSArray::<NSNumber>::new();
+                descs.push((
+                    CATapDescription::initExcludingProcesses_andDeviceUID_withStream(
+                        alloc(),
+                        &none,
+                        &uid,
+                        0,
+                    ),
+                    true,
+                ));
+                Mute::Unmuted
+            }
+            Kind::Processes { targets, mute, .. } => {
+                for target in targets {
+                    match target {
+                        Target::Processes(o) => descs.push((
+                            CATapDescription::initStereoMixdownOfProcesses(alloc(), &ids(o)),
+                            true,
+                        )),
+                        Target::AllExcept(o) => descs.push((
+                            CATapDescription::initStereoGlobalTapButExcludeProcesses(
                                 alloc(),
                                 &ids(o),
-                                &uid_ns,
-                                stream as _,
-                            );
-                            descs.push((desc, false));
+                            ),
+                            true,
+                        )),
+                        Target::OnDevice(o, uid) => {
+                            let uid_ns = NSString::from_str(uid);
+                            for stream in 0..output_streams(uid)? {
+                                let desc =
+                                    CATapDescription::initWithProcesses_andDeviceUID_withStream(
+                                        alloc(),
+                                        &ids(o),
+                                        &uid_ns,
+                                        stream as _,
+                                    );
+                                descs.push((desc, false));
+                            }
                         }
                     }
                 }
+                *mute
             }
-            *mute
-        }
-    };
-    let mute = match mute {
-        Mute::Unmuted => CATapMuteBehavior::Unmuted,
-        Mute::Muted => CATapMuteBehavior::Muted,
-        Mute::MutedWhenTapped => CATapMuteBehavior::MutedWhenTapped,
-    };
-    let name = NSString::from_str(AGGREGATE_NAME);
-    Ok(descs
-        .into_iter()
-        .map(|(desc, mixdown)| {
-            desc.setName(&name);
-            if mixdown {
-                desc.setMixdown(true);
-                desc.setMono(false);
-            }
-            desc.setPrivate(true);
-            desc.setMuteBehavior(mute);
-            desc
-        })
-        .collect())
+        };
+        let mute = match mute {
+            Mute::Unmuted => CATapMuteBehavior::Unmuted,
+            Mute::Muted => CATapMuteBehavior::Muted,
+            Mute::MutedWhenTapped => CATapMuteBehavior::MutedWhenTapped,
+        };
+        let name = NSString::from_str(AGGREGATE_NAME);
+        Ok(descs
+            .into_iter()
+            .map(|(desc, mixdown)| {
+                desc.setName(&name);
+                if mixdown {
+                    desc.setMixdown(true);
+                    desc.setMono(false);
+                }
+                desc.setPrivate(true);
+                desc.setMuteBehavior(mute);
+                desc
+            })
+            .collect())
+    }
 }
 
 /// How many output streams the device with this UID has.
@@ -485,13 +493,15 @@ unsafe fn create_tap(
     desc: &CATapDescription,
     taps: &mut Vec<AudioObjectID>,
 ) -> Result<Retained<NSString>, Error> {
-    let mut tap = 0;
-    check(
-        AudioHardwareCreateProcessTap(Some(desc), &mut tap),
-        "creating the process tap (macOS 14.2+)",
-    )?;
-    taps.push(tap);
-    Ok(desc.UUID().UUIDString())
+    unsafe {
+        let mut tap = 0;
+        check(
+            AudioHardwareCreateProcessTap(Some(desc), &mut tap),
+            "creating the process tap (macOS 14.2+)",
+        )?;
+        taps.push(tap);
+        Ok(desc.UUID().UUIDString())
+    }
 }
 
 fn key(k: &CStr) -> Retained<NSString> {
@@ -501,45 +511,47 @@ fn key(k: &CStr) -> Retained<NSString> {
 /// A private aggregate device clocked by (and holding) the device `clock`,
 /// with the taps `taps` (by UID) as its inputs, started automatically.
 unsafe fn create_aggregate(clock: &NSString, taps: &[&NSString]) -> Result<AudioObjectID, Error> {
-    let sub_device = NSDictionary::<NSString, AnyObject>::from_slices(
-        &[&*key(kAudioSubDeviceUIDKey)],
-        &[clock as &AnyObject],
-    );
-    let yes = NSNumber::new_bool(true);
-    let sub_taps: Vec<_> = taps
-        .iter()
-        .map(|uid| {
-            NSDictionary::<NSString, AnyObject>::from_slices(
-                &[&*key(kAudioSubTapUIDKey), &*key(kAudioSubTapDriftCompensationKey)],
-                &[*uid as &AnyObject, &*yes],
-            )
-        })
-        .collect();
-    let agg_uid =
-        NSString::from_str(&format!("simply-audio-capture-tap-{}", NSUUID::new().UUIDString()));
-    let agg_name = NSString::from_str(AGGREGATE_NAME);
-    let subs = NSArray::from_slice(&[&*sub_device]);
-    let taps = NSArray::from_retained_slice(&sub_taps);
-    let agg = NSDictionary::<NSString, AnyObject>::from_slices(
-        &[
-            &*key(kAudioAggregateDeviceUIDKey),
-            &*key(kAudioAggregateDeviceNameKey),
-            &*key(kAudioAggregateDeviceMainSubDeviceKey),
-            &*key(kAudioAggregateDeviceIsPrivateKey),
-            &*key(kAudioAggregateDeviceTapAutoStartKey),
-            &*key(kAudioAggregateDeviceSubDeviceListKey),
-            &*key(kAudioAggregateDeviceTapListKey),
-        ],
-        &[&*agg_uid as &AnyObject, &*agg_name, clock, &*yes, &*yes, &*subs, &*taps],
-    );
-    // NSDictionary is toll-free bridged to CFDictionary.
-    let cf: &CFDictionary = &*(Retained::as_ptr(&agg) as *const CFDictionary);
-    let mut aggregate = 0;
-    check(
-        AudioHardwareCreateAggregateDevice(cf, NonNull::from(&mut aggregate)),
-        "creating the private aggregate device",
-    )?;
-    Ok(aggregate)
+    unsafe {
+        let sub_device = NSDictionary::<NSString, AnyObject>::from_slices(
+            &[&*key(kAudioSubDeviceUIDKey)],
+            &[clock as &AnyObject],
+        );
+        let yes = NSNumber::new_bool(true);
+        let sub_taps: Vec<_> = taps
+            .iter()
+            .map(|uid| {
+                NSDictionary::<NSString, AnyObject>::from_slices(
+                    &[&*key(kAudioSubTapUIDKey), &*key(kAudioSubTapDriftCompensationKey)],
+                    &[*uid as &AnyObject, &*yes],
+                )
+            })
+            .collect();
+        let agg_uid =
+            NSString::from_str(&format!("simply-audio-capture-tap-{}", NSUUID::new().UUIDString()));
+        let agg_name = NSString::from_str(AGGREGATE_NAME);
+        let subs = NSArray::from_slice(&[&*sub_device]);
+        let taps = NSArray::from_retained_slice(&sub_taps);
+        let agg = NSDictionary::<NSString, AnyObject>::from_slices(
+            &[
+                &*key(kAudioAggregateDeviceUIDKey),
+                &*key(kAudioAggregateDeviceNameKey),
+                &*key(kAudioAggregateDeviceMainSubDeviceKey),
+                &*key(kAudioAggregateDeviceIsPrivateKey),
+                &*key(kAudioAggregateDeviceTapAutoStartKey),
+                &*key(kAudioAggregateDeviceSubDeviceListKey),
+                &*key(kAudioAggregateDeviceTapListKey),
+            ],
+            &[&*agg_uid as &AnyObject, &*agg_name, clock, &*yes, &*yes, &*subs, &*taps],
+        );
+        // NSDictionary is toll-free bridged to CFDictionary.
+        let cf: &CFDictionary = &*(Retained::as_ptr(&agg) as *const CFDictionary);
+        let mut aggregate = 0;
+        check(
+            AudioHardwareCreateAggregateDevice(cf, NonNull::from(&mut aggregate)),
+            "creating the private aggregate device",
+        )?;
+        Ok(aggregate)
+    }
 }
 
 /// The real-time callback: the taps' frames, each mapped to `channels`
@@ -555,59 +567,64 @@ unsafe extern "C-unwind" fn io_proc(
     _output_time: NonNull<AudioTimeStamp>,
     client: *mut c_void,
 ) -> OSStatus {
-    let ctx = &mut *(client as *mut Ctx);
-    ctx.calls.fetch_add(1, Ordering::Relaxed);
-    let list = input.as_ptr();
-    let n = (*list).mNumberBuffers as usize;
-    if n == 0 {
-        return 0;
-    }
-    let buffers = std::slice::from_raw_parts((*list).mBuffers.as_ptr(), n);
-    let taps = &buffers[n - ctx.taps.clamp(1, n)..];
-    let samples = |buf: &AudioBuffer| -> (&[f32], usize) {
-        if buf.mData.is_null() {
-            return (&[], 1);
-        }
-        let ch = buf.mNumberChannels.max(1) as usize;
-        (std::slice::from_raw_parts(buf.mData as *const f32, buf.mDataByteSize as usize / 4), ch)
-    };
-    let time = input_time.as_ref();
-    let ns = if time.mFlags.contains(AudioTimeStampFlags::HostTimeValid) {
-        (time.mHostTime as u128 * ctx.numer as u128 / ctx.denom as u128) as u64
-    } else {
-        0
-    };
-    let ch = ctx.channels;
-    if let [one] = taps {
-        let (s, src_ch) = samples(one);
-        if src_ch == ch {
-            let frames = s.len() / src_ch;
-            ctx.feed.push(&s[..frames * src_ch], ns);
+    unsafe {
+        let ctx = &mut *(client as *mut Ctx);
+        ctx.calls.fetch_add(1, Ordering::Relaxed);
+        let list = input.as_ptr();
+        let n = (*list).mNumberBuffers as usize;
+        if n == 0 {
             return 0;
         }
-    }
-    // Every tap of one aggregate is called with the same frame count.
-    let frames = taps.iter().map(samples).map(|(s, c)| s.len() / c).max().unwrap_or(0);
-    let mut done = 0;
-    while done < frames {
-        let count = (frames - done).min(MAP_FRAMES);
-        let out = &mut ctx.scratch[..count * ch];
-        out.fill(0.0);
-        for buf in taps {
-            let (s, src_ch) = samples(buf);
-            let have = (s.len() / src_ch).saturating_sub(done).min(count);
-            for f in 0..have {
-                let frame = &s[(done + f) * src_ch..(done + f + 1) * src_ch];
-                for c in 0..ch {
-                    out[f * ch + c] += frame[c.min(src_ch - 1)];
-                }
+        let buffers = std::slice::from_raw_parts((*list).mBuffers.as_ptr(), n);
+        let taps = &buffers[n - ctx.taps.clamp(1, n)..];
+        let samples = |buf: &AudioBuffer| -> (&[f32], usize) {
+            if buf.mData.is_null() {
+                return (&[], 1);
+            }
+            let ch = buf.mNumberChannels.max(1) as usize;
+            (
+                std::slice::from_raw_parts(buf.mData as *const f32, buf.mDataByteSize as usize / 4),
+                ch,
+            )
+        };
+        let time = input_time.as_ref();
+        let ns = if time.mFlags.contains(AudioTimeStampFlags::HostTimeValid) {
+            (time.mHostTime as u128 * ctx.numer as u128 / ctx.denom as u128) as u64
+        } else {
+            0
+        };
+        let ch = ctx.channels;
+        if let [one] = taps {
+            let (s, src_ch) = samples(one);
+            if src_ch == ch {
+                let frames = s.len() / src_ch;
+                ctx.feed.push(&s[..frames * src_ch], ns);
+                return 0;
             }
         }
-        let at = if ns == 0 { 0 } else { ns + (done as f64 * 1e9 / ctx.rate) as u64 };
-        ctx.feed.push(&ctx.scratch[..count * ch], at);
-        done += count;
+        // Every tap of one aggregate is called with the same frame count.
+        let frames = taps.iter().map(samples).map(|(s, c)| s.len() / c).max().unwrap_or(0);
+        let mut done = 0;
+        while done < frames {
+            let count = (frames - done).min(MAP_FRAMES);
+            let out = &mut ctx.scratch[..count * ch];
+            out.fill(0.0);
+            for buf in taps {
+                let (s, src_ch) = samples(buf);
+                let have = (s.len() / src_ch).saturating_sub(done).min(count);
+                for f in 0..have {
+                    let frame = &s[(done + f) * src_ch..(done + f + 1) * src_ch];
+                    for c in 0..ch {
+                        out[f * ch + c] += frame[c.min(src_ch - 1)];
+                    }
+                }
+            }
+            let at = if ns == 0 { 0 } else { ns + (done as f64 * 1e9 / ctx.rate) as u64 };
+            ctx.feed.push(&ctx.scratch[..count * ch], at);
+            done += count;
+        }
+        0
     }
-    0
 }
 
 /// Identity of a process object, read once: the pid, bundle id and path
@@ -741,10 +758,11 @@ impl Backend for Hal {
         sink: Sink,
     ) -> Result<(OutputTap, u32), (Error, Sink)> {
         let (wanted, set) = app_clock();
-        let clock = match wanted.and_then(|d| find_output(&d).ok()).map_or_else(|| find_output(""), Ok) {
-            Ok(d) => d,
-            Err(e) => return Err((e, sink)),
-        };
+        let clock =
+            match wanted.and_then(|d| find_output(&d).ok()).map_or_else(|| find_output(""), Ok) {
+                Ok(d) => d,
+                Err(e) => return Err((e, sink)),
+            };
         let kind = Kind::Processes { targets: targets.to_vec(), mute, clock };
         let mut tap = OutputTap::open(kind, self.rate, self.channels, sink)?;
         tap.clock_set = set;
@@ -776,8 +794,10 @@ unsafe extern "C-unwind" fn on_change(
     _addresses: NonNull<AudioObjectPropertyAddress>,
     client: *mut c_void,
 ) -> OSStatus {
-    (*(client as *const Wake)).poke(false);
-    0
+    unsafe {
+        (*(client as *const Wake)).poke(false);
+        0
+    }
 }
 
 /// The pointer HAL listeners poke `wake` through. A listener may still be
@@ -1209,7 +1229,7 @@ mod tests {
     static REAL_TAP: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     #[test]
-    #[ignore]
+    #[ignore = "creates a real CoreAudio app tap"]
     fn an_app_tap_leaves_no_aggregate_device_behind() {
         let _serial = REAL_TAP.lock().unwrap_or_else(|e| e.into_inner());
         let ours = || list_devices().unwrap().iter().filter(|o| o.name == AGGREGATE_NAME).count();
@@ -1228,7 +1248,7 @@ mod tests {
     /// aggregate's object id staying the same is what shows it was not.
     /// Ignored for the same reason as the others.
     #[test]
-    #[ignore]
+    #[ignore = "creates a real CoreAudio app tap"]
     fn a_paused_app_s_tap_is_kept_not_re_made() {
         let _serial = REAL_TAP.lock().unwrap_or_else(|e| e.into_inner());
         let ours = || -> Vec<AudioObjectID> {
@@ -1259,7 +1279,7 @@ mod tests {
     /// capture stops it and leaves no aggregate behind. Ignored for the
     /// same reason as the others.
     #[test]
-    #[ignore]
+    #[ignore = "plays silence on the default output and taps it"]
     fn an_app_channel_starts_delivers_and_leaves_no_aggregate_behind() {
         use crate::channels::{AppSinks, ChannelState};
         let _serial = REAL_TAP.lock().unwrap_or_else(|e| e.into_inner());
@@ -1323,7 +1343,7 @@ mod tests {
     ///    it hears 997 Hz (the child's default-output part) and not
     ///    1499 Hz. Other apps playing on the Mac add to what it hears.
     #[test]
-    #[ignore]
+    #[ignore = "plays tones on two real output devices (one may be BlackHole)"]
     fn two_devices_a_scoped_tap_and_the_devices_listener() {
         let _serial = REAL_TAP.lock().unwrap_or_else(|e| e.into_inner());
         if permission() != Permission::Granted {
@@ -1370,7 +1390,7 @@ mod tests {
             let power = s1 * s1 + s2 * s2 - k * s1 * s2;
             2.0 * power.max(0.0).sqrt() / x.len().max(1) as f64
         };
-        let (quiet, loud) = (f64::from(TONES.0 .1), f64::from(TONES.1 .1));
+        let (quiet, loud) = (f64::from(TONES.0.1), f64::from(TONES.1.1));
 
         // 1. The API itself.
         let mut child = Player::start(&default.name, &other.name);
@@ -1490,7 +1510,7 @@ mod tests {
     /// Not a test: the child [`Player`] runs, playing [`TONES`] while its
     /// stdin is open. Does nothing unless `TONE_PLAYER` names the devices.
     #[test]
-    #[ignore]
+    #[ignore = "not a test: the child process the two-devices test spawns"]
     fn tone_player() {
         use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
         use std::io::BufRead;
@@ -1554,7 +1574,7 @@ mod tests {
     /// Audio Recording was never asked for, so it never raises the prompt:
     /// `cargo test -p simply-audio-capture measure_tap_costs -- --ignored --nocapture`.
     #[test]
-    #[ignore]
+    #[ignore = "a measurement on real CoreAudio taps, not an assertion"]
     fn measure_tap_costs() {
         let _serial = REAL_TAP.lock().unwrap_or_else(|e| e.into_inner());
         let ours = || list_devices().unwrap().iter().filter(|o| o.name == AGGREGATE_NAME).count();
@@ -1733,17 +1753,19 @@ mod tests {
         _output_time: NonNull<AudioTimeStamp>,
         client: *mut c_void,
     ) -> OSStatus {
-        let p = &*(client as *const Probe);
-        p.calls.fetch_add(1, Ordering::Relaxed);
-        p.buffers.store((*input.as_ptr()).mNumberBuffers as u64, Ordering::Relaxed);
-        let mut tb = MachTimebaseInfo { numer: 1, denom: 1 };
-        mach_timebase_info(&mut tb);
-        let ns = now.as_ref().mHostTime as u128 * tb.numer as u128 / tb.denom.max(1) as u128;
-        let last = p.last.swap(ns as u64, Ordering::Relaxed);
-        if last != 0 {
-            p.max_gap.fetch_max((ns as u64).saturating_sub(last), Ordering::Relaxed);
+        unsafe {
+            let p = &*(client as *const Probe);
+            p.calls.fetch_add(1, Ordering::Relaxed);
+            p.buffers.store((*input.as_ptr()).mNumberBuffers as u64, Ordering::Relaxed);
+            let mut tb = MachTimebaseInfo { numer: 1, denom: 1 };
+            mach_timebase_info(&mut tb);
+            let ns = now.as_ref().mHostTime as u128 * tb.numer as u128 / tb.denom.max(1) as u128;
+            let last = p.last.swap(ns as u64, Ordering::Relaxed);
+            if last != 0 {
+                p.max_gap.fetch_max((ns as u64).saturating_sub(last), Ordering::Relaxed);
+            }
+            0
         }
-        0
     }
 
     /// Creates a real tap on the default output and destroys it: the private
@@ -1751,7 +1773,7 @@ mod tests {
     /// touches the machine's audio (and the very first time may raise the
     /// permission prompt): `cargo test -p simply-audio-capture -- --ignored`.
     #[test]
-    #[ignore]
+    #[ignore = "creates a real tap on the default output"]
     fn a_tap_leaves_no_aggregate_device_behind() {
         let _serial = REAL_TAP.lock().unwrap_or_else(|e| e.into_inner());
         let ours = || list_devices().unwrap().iter().filter(|o| o.name == AGGREGATE_NAME).count();

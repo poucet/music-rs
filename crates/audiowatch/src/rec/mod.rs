@@ -34,7 +34,7 @@ pub mod media;
 pub mod server;
 pub mod service;
 
-pub use api::{AudioRecApi, AUDIO_REC_API_META};
+pub use api::{AUDIO_REC_API_META, AudioRecApi};
 
 /// Reported to MCP clients on `initialize`.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

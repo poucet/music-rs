@@ -19,9 +19,9 @@ use std::fmt;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-use simply_midi_clock::{name_matches, ClockEvent};
+use simply_midi_clock::{ClockEvent, name_matches};
 
-use crate::reading::{parse, TempoMeter};
+use crate::reading::{TempoMeter, parse};
 
 /// How long a scan listens. At 40 bpm a tick is 62.5 ms apart, so this sees
 /// a dozen of them from the slowest clock anyone plays.

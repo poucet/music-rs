@@ -33,10 +33,10 @@ pub mod session;
 pub mod spec;
 pub mod wav;
 
-pub use catalog::{list_devices, DeviceInfo, Route, SideInfo};
+pub use catalog::{DeviceInfo, Route, SideInfo, list_devices};
 pub use session::{
-    frame_at, parse_takes, Outcome, RecordError, Recording, RecordingStatus, TakeInfo, TakeResult,
-    TakeStatus, TakeSync, TakeWindow,
+    Outcome, RecordError, Recording, RecordingStatus, TakeInfo, TakeResult, TakeStatus, TakeSync,
+    TakeWindow, frame_at, parse_takes,
 };
 pub use spec::{Channels, TakeSpec};
 

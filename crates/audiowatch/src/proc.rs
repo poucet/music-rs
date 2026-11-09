@@ -76,10 +76,7 @@ pub fn chain<T: ProcTable>(table: &T, pid: i32) -> Vec<Ancestor> {
         if parent <= 0 || seen.contains(&parent) {
             break;
         }
-        out.push(Ancestor {
-            pid: parent,
-            exe: table.path(parent),
-        });
+        out.push(Ancestor { pid: parent, exe: table.path(parent) });
         if parent == 1 {
             break;
         }
@@ -97,12 +94,7 @@ pub fn live_chain(pid: i32) -> Vec<Ancestor> {
 /// `afplay ← zsh ← claude` — the child's own name is *not* included, since the
 /// record already carries it. `keep` caps how many ancestors are shown.
 pub fn render(chain: &[Ancestor], keep: usize) -> String {
-    chain
-        .iter()
-        .take(keep)
-        .map(Ancestor::short_name)
-        .collect::<Vec<_>>()
-        .join(" ← ")
+    chain.iter().take(keep).map(Ancestor::short_name).collect::<Vec<_>>().join(" ← ")
 }
 
 #[cfg(test)]
@@ -114,10 +106,7 @@ mod tests {
 
     impl ProcTable for Table {
         fn ppid(&self, pid: i32) -> Option<i32> {
-            self.0
-                .iter()
-                .find(|(p, _, _)| *p == pid)
-                .map(|(_, pp, _)| *pp)
+            self.0.iter().find(|(p, _, _)| *p == pid).map(|(_, pp, _)| *pp)
         }
         fn path(&self, pid: i32) -> Option<String> {
             self.0
@@ -199,11 +188,7 @@ mod tests {
         let me = std::process::id() as i32;
         let c = live_chain(me);
         assert!(!c.is_empty(), "this test has a parent");
-        assert_eq!(
-            c.last().map(|a| a.pid),
-            Some(1),
-            "the walk reaches launchd: {c:?}"
-        );
+        assert_eq!(c.last().map(|a| a.pid), Some(1), "the walk reaches launchd: {c:?}");
         assert!(c.iter().all(|a| a.pid > 0));
     }
 }

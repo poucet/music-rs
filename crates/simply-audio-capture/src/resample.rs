@@ -125,7 +125,10 @@ impl Resampler {
             let p = frac * PHASES as f64;
             let k = (p as usize).min(PHASES - 1);
             let a = (p - k as f64) as f32;
-            let (lo, hi) = (&self.table[k * taps..(k + 1) * taps], &self.table[(k + 1) * taps..(k + 2) * taps]);
+            let (lo, hi) = (
+                &self.table[k * taps..(k + 1) * taps],
+                &self.table[(k + 1) * taps..(k + 2) * taps],
+            );
             // The nearest frame, and the taps' differences to it: a
             // constant comes out exactly.
             let near = (self.half - 1 + (frac >= 0.5) as usize) * ch;
@@ -191,8 +194,16 @@ mod tests {
     /// clean (measured: −78 dB at 10 kHz, the worst frame).
     #[test]
     fn a_tone_comes_through_clean_up_and_down() {
-        for (from, to) in [(44_100.0, 48_000.0), (48_000.0, 44_100.0), (48_000.0, 96_000.0), (96_000.0, 48_000.0)] {
-            for (hz, floor) in [(100.0, -95.0), (1_000.0, -75.0), (5_000.0, -75.0), (10_000.0, -75.0), (16_000.0, -72.0)] {
+        for (from, to) in
+            [(44_100.0, 48_000.0), (48_000.0, 44_100.0), (48_000.0, 96_000.0), (96_000.0, 48_000.0)]
+        {
+            for (hz, floor) in [
+                (100.0, -95.0),
+                (1_000.0, -75.0),
+                (5_000.0, -75.0),
+                (10_000.0, -75.0),
+                (16_000.0, -72.0),
+            ] {
                 let db = error_db(from, to, hz);
                 assert!(db < floor, "{hz} Hz from {from} to {to}: {db:.1} dB");
             }

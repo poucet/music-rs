@@ -10,7 +10,7 @@ It also **records**: any channel, or pair of channels, of any audio device to a 
 ## Run it
 
 ```sh
-cargo build --release
+cargo build -p audiowatch --release
 ./target/release/audiowatch
 ```
 
@@ -213,16 +213,17 @@ flowchart LR
 | `src/notify.rs` | notifications, and checking they arrived |
 | `src/agent.rs` | the LaunchAgent plist |
 | `src/rec/` | the recorder's MCP server (`audiowatch --mcp`) and its command line (`audiowatch rec`) |
-| `crates/audiowatch-record` | the recorder: take specs, which device records in which direction, the writer thread, sessions and the host-time window |
-| `crates/simply-audio-capture` | capture any device by name: its inputs, or for an output-only device a CoreAudio process tap in a private aggregate device (`""`, the default output, follows it when the Mac switches outputs); or **applications** (one app, several, or everything except some), followed as they quit and relaunch; resampled to the rate asked for. No audiowatch types, so it is shared with tussen-hub |
-| `crates/audiowatch-clock` | recording in time with a MIDI clock: the downbeats, the tempo, the MIDI input (feature `midi-clock`) |
-| `crates/simply-*` | device enumeration, MIDI clock messages, and the trait the MCP tools are derived from |
+| `../audiowatch-record` | the recorder: take specs, which device records in which direction, the writer thread, sessions and the host-time window |
+| `../simply-audio-capture` | capture any device by name: its inputs, or for an output-only device a CoreAudio process tap in a private aggregate device (`""`, the default output, follows it when the Mac switches outputs); or **applications** (one app, several, or everything except some), followed as they quit and relaunch; resampled to the rate asked for. No audiowatch types, so it is shared with tussen-hub |
+| `../audiowatch-clock` | recording in time with a MIDI clock: the downbeats, the tempo, the MIDI input (feature `midi-clock`) |
+| `../simply-audio-device`, `../simply-midi-clock` | device enumeration and selection, MIDI clock messages |
+| `simply-api` (its own repository) | the trait the MCP tools are derived from |
 
 * **The watcher has no dependencies.**
   * It reaches CoreAudio, libproc and libc through the declarations in `src/sys.rs`.
-  * Its modules use none of the crates in `Cargo.toml`.
+  * Its modules use none of the crates in its `Cargo.toml`.
 * **The recorder has some**: `cpal` for devices, `objc2` for the output tap, `hound` and `rtrb` to write, `midir` for the clock, `rmcp`, `axum` and `tokio` to serve.
-* `cargo test --workspace` covers the encoding, the filter rules, the log reader, the CLI and the time parsing.
+* `cargo test -p audiowatch` and the audio crates' tests cover the encoding, the filter rules, the log reader, the CLI and the time parsing.
   * Also the whole state machine, including the short-lived-process case.
   * Also the recorder: take specs, routing, the trim to a window, the clock timeline, and the MCP surface over a real socket.
 * The CoreAudio callbacks are covered by hand, as described above.
@@ -305,7 +306,7 @@ launchctl bootout   gui/$(id -u)/local.audiowatch    # and to stop it
 | shell | `audiowatch rec list --json`, `audiowatch rec clocks`, `audiowatch rec record --seconds N --json TAKE...`, `audiowatch rec record --bars N [--beats-per-bar B] [--clock PORT] TAKE...` | no MCP client, or a skill that runs commands |
 
 ```sh
-cargo build --release
+cargo build -p audiowatch --release
 ./target/release/audiowatch --mcp
 claude mcp add --transport http audiowatch http://127.0.0.1:3929/mcp
 ```
@@ -393,7 +394,7 @@ When something on the desk sends MIDI clock (a drum machine, a groovebox, a DAW)
   * It is mapped to a frame through each buffer's capture time. Both are on macOS's host clock.
   * The file is trimmed to it. macOS only.
 * **It is a build feature**, `midi-clock`, on by default.
-  * `cargo build --release --no-default-features` builds a recorder with no MIDI at all.
+  * `cargo build -p audiowatch --release --no-default-features` builds a recorder with no MIDI at all.
   * That build refuses `bars`, `clocks` and `--bars` by name, and records by seconds.
 
 ### What can be recorded on this machine
@@ -444,7 +445,7 @@ The app that runs the recorder (the terminal, or whatever launched `audiowatch -
 Two tests open a real device (BlackHole 16ch, input only) and are left out of the gate:
 
 ```sh
-cargo test --test rec_http -- --ignored              # wait: false, then await_recording
+cargo test -p audiowatch --test rec_http -- --ignored # wait: false, then await_recording
 cargo test -p audiowatch-record -- --ignored         # a take trimmed to a window of host time
 ```
 

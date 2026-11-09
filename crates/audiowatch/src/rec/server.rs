@@ -5,10 +5,10 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use rmcp::transport::streamable_http_server::{
-    session::local::LocalSessionManager, StreamableHttpServerConfig, StreamableHttpService,
+    StreamableHttpServerConfig, StreamableHttpService, session::local::LocalSessionManager,
 };
 
-use super::service::{mcp_server_over, AudioRecService};
+use super::service::{AudioRecService, mcp_server_over};
 
 /// Default bind port.
 pub const DEFAULT_PORT: u16 = 3929;
@@ -52,9 +52,7 @@ fn parse(args: &[String]) -> Result<(u16, std::path::PathBuf), String> {
             "--mcp" => {}
             "--port" | "-p" => {
                 let value = it.next().ok_or("--port needs a value")?;
-                port = value
-                    .parse()
-                    .map_err(|_| format!("invalid port {value:?}"))?;
+                port = value.parse().map_err(|_| format!("invalid port {value:?}"))?;
             }
             "--dir" | "-d" => dir = it.next().ok_or("--dir needs a value")?.into(),
             "--help" | "-h" => return Err(USAGE.to_string()),
@@ -74,10 +72,7 @@ pub fn main(args: &[String]) -> std::process::ExitCode {
             return ExitCode::from(2);
         }
     };
-    let runtime = match tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()
-    {
+    let runtime = match tokio::runtime::Builder::new_multi_thread().enable_all().build() {
         Ok(r) => r,
         Err(e) => {
             eprintln!("audiowatch: no async runtime: {e}");
@@ -107,8 +102,6 @@ mod tests {
         assert_eq!(port, 3929);
         let (port, dir) = parse(&args(&["--mcp", "--port", "4000", "--dir", "/r"])).unwrap();
         assert_eq!((port, dir), (4000, std::path::PathBuf::from("/r")));
-        assert!(parse(&args(&["--mcp", "--bogus"]))
-            .unwrap_err()
-            .contains("unknown argument"));
+        assert!(parse(&args(&["--mcp", "--bogus"])).unwrap_err().contains("unknown argument"));
     }
 }

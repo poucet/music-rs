@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 
 use rmcp::model::{
     CallToolRequestParams, CallToolResponse, ListToolsResult, PaginatedRequestParams,
-    ProgressNotificationParam, ProtocolVersion, ServerInfo, Tool,
+    ProgressNotificationParam, ProtocolVersion, ServerConfig, Tool,
 };
 use rmcp::service::{NotificationContext, RequestContext, RoleServer};
 use rmcp::{ErrorData, ServerHandler};
@@ -39,7 +39,7 @@ impl<S> Heartbeat<S> {
 }
 
 impl<S: ServerHandler + Sync> ServerHandler for Heartbeat<S> {
-    fn get_info(&self) -> ServerInfo {
+    fn get_info(&self) -> ServerConfig {
         self.inner.get_info()
     }
 

@@ -3,17 +3,17 @@
 //! call here is one the server answers or refuses before touching hardware,
 //! so the test runs the same on a machine with no audio at all.
 
-use audiowatch::rec::server::{app, MCP_PATH};
-use audiowatch::rec::service::AudioRecService;
 use audiowatch::rec::AUDIO_REC_API_META;
+use audiowatch::rec::server::{MCP_PATH, app};
+use audiowatch::rec::service::AudioRecService;
 use rmcp::{
-    model::{CallToolRequestParams, ClientInfo},
-    transport::{
-        streamable_http_client::StreamableHttpClientTransportConfig, StreamableHttpClientTransport,
-    },
     ServiceExt,
+    model::{CallToolRequestParams, ClientConfig},
+    transport::{
+        StreamableHttpClientTransport, streamable_http_client::StreamableHttpClientTransportConfig,
+    },
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
 #[tokio::test]
@@ -35,7 +35,7 @@ async fn the_surface_is_three_tools_and_refusals_name_the_fix() {
     let transport = StreamableHttpClientTransport::from_config(
         StreamableHttpClientTransportConfig::with_uri(format!("http://{addr}{MCP_PATH}")),
     );
-    let client = ClientInfo::default().serve(transport).await.unwrap();
+    let client = ClientConfig::default().serve(transport).await.unwrap();
 
     // Exactly the trait's tools — and no start/stop pair.
     let tools = client.list_all_tools().await.unwrap();
@@ -44,17 +44,9 @@ async fn the_surface_is_three_tools_and_refusals_name_the_fix() {
     assert_eq!(served, vec!["await_recording", "list_devices", "record"]);
     for tool in &tools {
         let meta = AUDIO_REC_API_META.method(&tool.name).unwrap();
-        assert_eq!(
-            tool.description.as_deref(),
-            Some(meta.description),
-            "{}",
-            tool.name
-        );
+        assert_eq!(tool.description.as_deref(), Some(meta.description), "{}", tool.name);
     }
-    let instructions = client
-        .peer_info()
-        .and_then(|i| i.instructions.clone())
-        .unwrap();
+    let instructions = client.peer_info().and_then(|i| i.instructions.clone()).unwrap();
     assert!(
         instructions.contains("never") && instructions.contains("await_recording"),
         "{instructions}"
@@ -71,27 +63,13 @@ async fn the_surface_is_three_tools_and_refusals_name_the_fix() {
                 .await
                 .unwrap();
             assert_eq!(result.is_error, Some(true), "{name} should refuse");
-            serde_json::to_value(&result.content).unwrap()[0]["text"]
-                .as_str()
-                .unwrap()
-                .to_string()
+            serde_json::to_value(&result.content).unwrap()[0]["text"].as_str().unwrap().to_string()
         }
     };
 
-    let text = refused(
-        "record",
-        json!({"takes": ["BlackHole 16ch:in:1-2"], "seconds": 90}),
-    )
-    .await;
-    assert!(
-        text.contains("at most 50") && text.contains("wait: false"),
-        "{text}"
-    );
-    let text = refused(
-        "record",
-        json!({"takes": ["BlackHole 16ch:in:1-3"], "seconds": 1}),
-    )
-    .await;
+    let text = refused("record", json!({"takes": ["BlackHole 16ch:in:1-2"], "seconds": 90})).await;
+    assert!(text.contains("at most 50") && text.contains("wait: false"), "{text}");
+    let text = refused("record", json!({"takes": ["BlackHole 16ch:in:1-3"], "seconds": 1})).await;
     assert!(text.contains("adjacent pair"), "{text}");
     let text = refused("await_recording", json!({"id": 42})).await;
     assert!(text.contains("no recording has that id"), "{text}");
@@ -108,7 +86,7 @@ async fn the_surface_is_three_tools_and_refusals_name_the_fix() {
 #[ignore = "opens a real audio device (BlackHole 16ch)"]
 async fn a_background_take_on_blackhole_comes_back_finished() {
     use audiowatch::rec::AudioRecApi;
-    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target/scratch/rec-mcp");
+    let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("rec-mcp");
     let service = AudioRecService::new(dir);
     let started = service
         .record(

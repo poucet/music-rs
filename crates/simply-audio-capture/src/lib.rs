@@ -118,7 +118,7 @@ mod watch;
 use resample::Resampler;
 
 pub use apps::{App, AppInfo, AppStatus, AppTap, Apps, Mute};
-pub use channels::{AppChannel, AppSinks, ChannelState, ChannelsStatus, CHANNEL_HOLD};
+pub use channels::{AppChannel, AppSinks, CHANNEL_HOLD, ChannelState, ChannelsStatus};
 
 use std::fmt;
 use std::sync::mpsc;
@@ -382,7 +382,9 @@ where
             if tap::permission() == Permission::Denied {
                 return Err(Error::new(
                     ErrorKind::PermissionDenied,
-                    format!("tapping an output needs System Audio Recording permission, which is denied: {GRANT_HINT}"),
+                    format!(
+                        "tapping an output needs System Audio Recording permission, which is denied: {GRANT_HINT}"
+                    ),
                 ));
             }
             if name.is_empty() {
@@ -508,7 +510,9 @@ fn may_tap_apps(tap: &AppTap) -> Result<(), Error> {
     if tap::permission() == Permission::Denied {
         return Err(Error::new(
             ErrorKind::PermissionDenied,
-            format!("tapping an app needs System Audio Recording permission, which is denied: {GRANT_HINT}"),
+            format!(
+                "tapping an app needs System Audio Recording permission, which is denied: {GRANT_HINT}"
+            ),
         ));
     }
     #[cfg(not(target_os = "macos"))]

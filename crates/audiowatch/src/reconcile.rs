@@ -131,14 +131,7 @@ impl Reconciler {
 
             if running.output != entry.running_output {
                 if running.output {
-                    emit(
-                        if baseline {
-                            Kind::Baseline
-                        } else {
-                            Kind::OutputStart
-                        },
-                        &entry,
-                    );
+                    emit(if baseline { Kind::Baseline } else { Kind::OutputStart }, &entry);
                 } else if !baseline {
                     // A baseline pass never reports something stopping.
                     emit(Kind::OutputStop, &entry);
@@ -147,14 +140,7 @@ impl Reconciler {
             }
 
             if running.input != entry.running_input && !baseline {
-                emit(
-                    if running.input {
-                        Kind::InputStart
-                    } else {
-                        Kind::InputStop
-                    },
-                    &entry,
-                );
+                emit(if running.input { Kind::InputStart } else { Kind::InputStop }, &entry);
             }
             entry.running_input = running.input;
 
@@ -162,12 +148,8 @@ impl Reconciler {
         }
 
         // Anything we were tracking that is no longer in the list has gone.
-        let mut gone: Vec<AudioObjectId> = self
-            .tracked
-            .keys()
-            .copied()
-            .filter(|o| !seen.contains(o))
-            .collect();
+        let mut gone: Vec<AudioObjectId> =
+            self.tracked.keys().copied().filter(|o| !seen.contains(o)).collect();
         gone.sort_unstable();
         for object in gone {
             let entry = self.tracked.remove(&object).unwrap_or_default();
@@ -216,41 +198,25 @@ mod tests {
             v
         }
         fn running(&self, object: AudioObjectId) -> Option<RunningState> {
-            self.processes
-                .iter()
-                .find(|(o, _, _)| *o == object)
-                .map(|(_, r, _)| *r)
+            self.processes.iter().find(|(o, _, _)| *o == object).map(|(_, r, _)| *r)
         }
         fn details(&self, object: AudioObjectId) -> Option<ProcessDetails> {
             if self.detail_less.contains(&object) {
                 return None;
             }
-            self.processes
-                .iter()
-                .find(|(o, _, _)| *o == object)
-                .map(|(_, _, d)| d.clone())
+            self.processes.iter().find(|(o, _, _)| *o == object).map(|(_, _, d)| d.clone())
         }
     }
 
     fn proc(pid: i32, exe: Option<&str>, out: bool) -> (RunningState, ProcessDetails) {
         (
-            RunningState {
-                output: out,
-                input: false,
-            },
+            RunningState { output: out, input: false },
             ProcessDetails {
                 pid,
                 bundle: None,
                 exe: exe.map(str::to_string),
-                parents: vec![Ancestor {
-                    pid: 1,
-                    exe: Some("/sbin/launchd".into()),
-                }],
-                devices: if out {
-                    vec!["Scarlett 4i4 USB".into()]
-                } else {
-                    vec![]
-                },
+                parents: vec![Ancestor { pid: 1, exe: Some("/sbin/launchd".into()) }],
+                devices: if out { vec!["Scarlett 4i4 USB".into()] } else { vec![] },
             },
         )
     }
@@ -305,10 +271,7 @@ mod tests {
 
         // And it is gone, still running, before we look again.
         hal.processes.clear();
-        assert_eq!(
-            kinds(&r.reconcile(&hal, 3000)),
-            vec![Kind::OutputStop, Kind::Disconnect]
-        );
+        assert_eq!(kinds(&r.reconcile(&hal, 3000)), vec![Kind::OutputStop, Kind::Disconnect]);
         assert_eq!(r.tracked_count(), 0);
     }
 
@@ -330,11 +293,7 @@ mod tests {
         hal.processes[0].2.exe = None;
         let out = r.reconcile(&hal, 1100);
         assert_eq!(kinds(&out), vec![Kind::OutputStart]);
-        assert_eq!(
-            out[0].exe.as_deref(),
-            Some("/usr/bin/afplay"),
-            "cached identity must survive"
-        );
+        assert_eq!(out[0].exe.as_deref(), Some("/usr/bin/afplay"), "cached identity must survive");
         assert_eq!(out[0].pid, 777);
         assert_eq!(out[0].note.as_deref(), Some(EXITED_NOTE));
     }
@@ -365,10 +324,7 @@ mod tests {
         r.reconcile(&hal, 0);
         // Connect and output-start fell inside one poll interval.
         add(&mut hal, 40, 888, Some("/usr/bin/afplay"), true);
-        assert_eq!(
-            kinds(&r.reconcile(&hal, 1000)),
-            vec![Kind::Connect, Kind::OutputStart]
-        );
+        assert_eq!(kinds(&r.reconcile(&hal, 1000)), vec![Kind::Connect, Kind::OutputStart]);
     }
 
     #[test]
@@ -393,10 +349,7 @@ mod tests {
         let mut r = Reconciler::new();
         r.reconcile(&hal, 0);
         for t in 1..20 {
-            assert!(
-                r.reconcile(&hal, t * 100).is_empty(),
-                "poll {t} invented an event"
-            );
+            assert!(r.reconcile(&hal, t * 100).is_empty(), "poll {t} invented an event");
         }
     }
 
@@ -424,25 +377,15 @@ mod tests {
         for i in 0..10u32 {
             add(&mut inner, i, 100 + i as i32, Some("/a"), false);
         }
-        let hal = Counting {
-            inner,
-            details: std::cell::Cell::new(0),
-        };
+        let hal = Counting { inner, details: std::cell::Cell::new(0) };
         let mut r = Reconciler::new();
         r.reconcile(&hal, 0);
         let after_first = hal.details.get();
-        assert_eq!(
-            after_first, 10,
-            "the first pass should read each process once"
-        );
+        assert_eq!(after_first, 10, "the first pass should read each process once");
         for t in 1..50 {
             r.reconcile(&hal, t * 100);
         }
-        assert_eq!(
-            hal.details.get(),
-            after_first,
-            "an idle tick must read no details"
-        );
+        assert_eq!(hal.details.get(), after_first, "an idle tick must read no details");
     }
 
     #[test]
@@ -477,10 +420,7 @@ mod tests {
         add(&mut hal, 81, 100, Some("/a"), false);
         hal.processes[0].1.input = true;
         let mut r = Reconciler::new();
-        assert!(
-            r.reconcile(&hal, 0).is_empty(),
-            "the baseline pass announces nothing"
-        );
+        assert!(r.reconcile(&hal, 0).is_empty(), "the baseline pass announces nothing");
         // ... and it is remembered, so it does not fire on the next tick either.
         assert!(r.reconcile(&hal, 100).is_empty());
     }
@@ -494,10 +434,7 @@ mod tests {
         // The object is still listed but its flags now fail to read.
         hal.processes.clear();
         hal.unreadable.push(90);
-        assert!(
-            r.reconcile(&hal, 1000).is_empty(),
-            "an unreadable object is not a disconnect"
-        );
+        assert!(r.reconcile(&hal, 1000).is_empty(), "an unreadable object is not a disconnect");
         assert_eq!(r.tracked_count(), 1);
         // Once it really leaves the list, it disconnects.
         hal.unreadable.clear();
@@ -533,11 +470,7 @@ mod tests {
         assert_eq!(kinds(&ended), vec![Kind::OutputStop, Kind::Disconnect]);
         for e in &ended {
             assert_eq!(e.note, None, "{} should carry no note", e.kind.wire());
-            assert_eq!(
-                e.exe.as_deref(),
-                Some("/usr/bin/afplay"),
-                "but it still names the process"
-            );
+            assert_eq!(e.exe.as_deref(), Some("/usr/bin/afplay"), "but it still names the process");
         }
     }
 
@@ -550,10 +483,7 @@ mod tests {
             add(&mut hal, 200 + i, 1000 + i as i32, Some("/x"), true);
         }
         let out = r.reconcile(&hal, 1000);
-        assert_eq!(
-            out.iter().filter(|r| r.kind == Kind::OutputStart).count(),
-            8
-        );
+        assert_eq!(out.iter().filter(|r| r.kind == Kind::OutputStart).count(), 8);
         assert_eq!(out.iter().filter(|r| r.kind == Kind::Connect).count(), 8);
     }
 }

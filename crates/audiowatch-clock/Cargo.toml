@@ -2,7 +2,7 @@
 name = "audiowatch-clock"
 description = "Record in time with a MIDI clock: read its downbeats off a MIDI input and trim takes to the bars between them"
 version.workspace = true
-edition = "2021"
+edition.workspace = true
 license.workspace = true
 
 [features]

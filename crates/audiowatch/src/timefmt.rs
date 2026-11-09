@@ -6,10 +6,7 @@ use crate::sys;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub fn now_millis() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis() as i64)
-        .unwrap_or(0)
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0)
 }
 
 /// `2026-09-26T11:24:51.910+02:00`
@@ -18,11 +15,7 @@ pub fn format_local(millis: i64) -> String {
     let sub = millis.rem_euclid(1000);
     let tm = sys::local_tm(secs);
     let off_min = tm.gmtoff / 60;
-    let (sign, off_abs) = if off_min < 0 {
-        ('-', -off_min)
-    } else {
-        ('+', off_min)
-    };
+    let (sign, off_abs) = if off_min < 0 { ('-', -off_min) } else { ('+', off_min) };
     format!(
         "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:03}{}{:02}:{:02}",
         tm.year + 1900,
@@ -139,10 +132,7 @@ mod tests {
 
     #[test]
     fn since_subtracts_a_duration_from_now() {
-        assert_eq!(
-            parse_since("1h", 10_000_000).unwrap(),
-            10_000_000 - 3_600_000
-        );
+        assert_eq!(parse_since("1h", 10_000_000).unwrap(), 10_000_000 - 3_600_000);
     }
 
     #[test]

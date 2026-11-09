@@ -14,10 +14,10 @@ use audiowatch_record::{Channels, DeviceInfo, Outcome, Recording, TakeInfo, Take
 use simply_api::mcp::McpApiServer;
 use simply_api::{ApiError, ApiResult};
 
-use super::api::{audio_rec_api_tool_router, AudioRecApi};
-use super::heartbeat::Heartbeat;
 #[cfg(feature = "midi-clock")]
 use super::MAX_ARM_SECONDS;
+use super::api::{AudioRecApi, audio_rec_api_tool_router};
+use super::heartbeat::Heartbeat;
 use super::{MAX_BACKGROUND_SECONDS, MAX_HELD, MAX_SECONDS, VERSION};
 
 /// What a connecting agent reads first. Edit `instructions.md`, not a string.
@@ -100,10 +100,7 @@ impl Recorded {
     fn complete(id: Option<u64>, asked: Asked, finished: Finished) -> Recorded {
         let (seconds, bars) = asked.split();
         let results = finished.outcome.takes;
-        let warnings = results
-            .iter()
-            .flat_map(|r| r.warnings.iter().cloned())
-            .collect();
+        let warnings = results.iter().flat_map(|r| r.warnings.iter().cloned()).collect();
         Recorded {
             id,
             complete: true,
@@ -189,10 +186,7 @@ impl Running {
             #[cfg(feature = "midi-clock")]
             Running::Bars(r) => {
                 let done = r.wait();
-                Finished {
-                    outcome: done.outcome,
-                    clock: done.clock,
-                }
+                Finished { outcome: done.outcome, clock: done.clock }
             }
         }
     }
@@ -239,11 +233,7 @@ fn make_room<T>(
     if held.len() < cap {
         return Ok(None);
     }
-    let oldest = held
-        .iter()
-        .find(|(_, v)| finished(v))
-        .map(|(&k, _)| k)
-        .ok_or(())?;
+    let oldest = held.iter().find(|(_, v)| finished(v)).map(|(&k, _)| k).ok_or(())?;
     held.remove(&oldest);
     Ok(Some(oldest))
 }
@@ -261,10 +251,7 @@ impl AudioRecService {
         let dir = dir.as_ref();
         AudioRecService {
             dir: std::path::absolute(dir).unwrap_or_else(|_| dir.to_path_buf()),
-            book: Mutex::new(Book {
-                next: 1,
-                ..Book::default()
-            }),
+            book: Mutex::new(Book { next: 1, ..Book::default() }),
         }
     }
 
@@ -327,8 +314,7 @@ pub fn length(seconds: Option<f64>, bars: Option<u32>) -> ApiResult<Asked> {
 
 /// What a `bars` recording answers from a build without the MIDI clock.
 #[cfg(not(feature = "midi-clock"))]
-const NO_CLOCK: &str =
-    "this audiowatch was built without the midi-clock feature, so it records by \
+const NO_CLOCK: &str = "this audiowatch was built without the midi-clock feature, so it records by \
                         seconds only; give seconds";
 
 /// How long a `bars` recording may wait for its downbeat — or its refusal,
@@ -336,11 +322,7 @@ const NO_CLOCK: &str =
 /// The bars are checked with one more bar allowed for reaching the downbeat.
 #[cfg(feature = "midi-clock")]
 pub fn check_bars(plan: &BarPlan, bpm: Option<f64>, wait: bool) -> ApiResult<f64> {
-    let cap = if wait {
-        MAX_SECONDS
-    } else {
-        MAX_BACKGROUND_SECONDS
-    };
+    let cap = if wait { MAX_SECONDS } else { MAX_BACKGROUND_SECONDS };
     let Some(bpm) = bpm.filter(|b| *b > 0.0) else {
         if wait {
             return Err(ApiError::invalid_params(
@@ -370,11 +352,7 @@ pub fn check_bars(plan: &BarPlan, bpm: Option<f64>, wait: bool) -> ApiResult<f64
             plan.bars, plan.beats_per_bar
         )));
     }
-    Ok(if wait {
-        cap - bars - one_bar
-    } else {
-        MAX_ARM_SECONDS
-    })
+    Ok(if wait { cap - bars - one_bar } else { MAX_ARM_SECONDS })
 }
 
 #[async_trait]
@@ -445,7 +423,7 @@ impl AudioRecApi for AudioRecService {
                     return Err(failed(format!(
                         "{MAX_HELD} recordings are still running; await_recording one of them \
                          before starting another"
-                    )))
+                    )));
                 }
             }
         }
@@ -516,16 +494,10 @@ async fn start_bars(
             .await
             .map_err(|e| failed(format!("the MIDI scan failed: {e}")))?
             .map_err(|e| ApiError::invalid_params(e.to_string()))?;
-    let plan = BarPlan {
-        beats_per_bar,
-        bars,
-        max_take_ns: Some((MAX_BACKGROUND_SECONDS * 1e9) as u64),
-    };
+    let plan =
+        BarPlan { beats_per_bar, bars, max_take_ns: Some((MAX_BACKGROUND_SECONDS * 1e9) as u64) };
     let arm = check_bars(&plan, input.bpm, wait)?;
-    let options = BarOptions {
-        plan,
-        arm_timeout: Duration::from_secs_f64(arm),
-    };
+    let options = BarOptions { plan, arm_timeout: Duration::from_secs_f64(arm) };
     Ok(Box::new(move || {
         BarRecording::start(&specs, &dir, input, options)
             .map(Running::Bars)
@@ -580,10 +552,7 @@ mod tests {
             e.message
         );
         assert!(check_seconds(51.0, false).is_ok());
-        assert!(check_seconds(601.0, false)
-            .unwrap_err()
-            .message
-            .contains("at most 600"));
+        assert!(check_seconds(601.0, false).unwrap_err().message.contains("at most 600"));
         assert!(check_seconds(0.0, true).is_err());
         assert!(check_seconds(f64::NAN, false).is_err());
         assert!(check_seconds(MAX_SECONDS, true).is_ok());
@@ -594,36 +563,16 @@ mod tests {
     async fn bad_takes_bad_lengths_and_bad_ids_open_nothing() {
         let service = AudioRecService::new(scratch());
         let e = service
-            .record(
-                vec!["BlackHole 16ch:in:1-2".into()],
-                Some(120.0),
-                None,
-                None,
-                None,
-                None,
-                None,
-            )
+            .record(vec!["BlackHole 16ch:in:1-2".into()], Some(120.0), None, None, None, None, None)
             .await
             .unwrap_err();
         assert!(e.message.contains("at most 50"));
         let e = service
-            .record(
-                vec!["BlackHole".into()],
-                Some(1.0),
-                None,
-                None,
-                None,
-                None,
-                None,
-            )
+            .record(vec!["BlackHole".into()], Some(1.0), None, None, None, None, None)
             .await
             .unwrap_err();
         assert_eq!(e.kind, ApiErrorKind::InvalidParams);
-        assert!(
-            e.message.contains("DEVICE:in|out:CHANNELS"),
-            "{}",
-            e.message
-        );
+        assert!(e.message.contains("DEVICE:in|out:CHANNELS"), "{}", e.message);
         let e = service
             .record(vec![], Some(1.0), None, None, None, None, Some(true))
             .await
@@ -631,11 +580,7 @@ mod tests {
         assert!(e.message.contains("no takes"), "{}", e.message);
         let e = service.await_recording(7).await.unwrap_err();
         assert_eq!(e.kind, ApiErrorKind::InvalidParams);
-        assert!(
-            e.message.contains("no recording has that id"),
-            "{}",
-            e.message
-        );
+        assert!(e.message.contains("no recording has that id"), "{}", e.message);
     }
 
     #[test]
@@ -672,10 +617,7 @@ mod tests {
             warnings: vec!["BlackHole 16ch:in:1-2: x".into()],
             sync: None,
         };
-        let outcome = Outcome {
-            takes: vec![r],
-            ..Outcome::default()
-        };
+        let outcome = Outcome { takes: vec![r], ..Outcome::default() };
         let done = Recorded::complete(None, Asked::Seconds(2.0), outcome.into());
         assert!(done.complete);
         assert_eq!(done.takes[0].duration_s, Some(2.0));
@@ -691,24 +633,14 @@ mod tests {
     fn a_length_is_seconds_or_bars_never_both_or_neither() {
         assert_eq!(length(Some(2.0), None), Ok(Asked::Seconds(2.0)));
         assert_eq!(length(None, Some(4)), Ok(Asked::Bars(4)));
-        assert!(length(Some(2.0), Some(4))
-            .unwrap_err()
-            .message
-            .contains("not both"));
-        assert!(length(None, None)
-            .unwrap_err()
-            .message
-            .contains("bars of a MIDI clock"));
+        assert!(length(Some(2.0), Some(4)).unwrap_err().message.contains("not both"));
+        assert!(length(None, None).unwrap_err().message.contains("bars of a MIDI clock"));
         assert!(length(None, Some(0)).is_err());
     }
 
     #[cfg(feature = "midi-clock")]
     fn bars(n: u32) -> BarPlan {
-        BarPlan {
-            beats_per_bar: 4,
-            bars: n,
-            max_take_ns: None,
-        }
+        BarPlan { beats_per_bar: 4, bars: n, max_take_ns: None }
     }
 
     #[cfg(feature = "midi-clock")]
@@ -721,31 +653,19 @@ mod tests {
         // 24 bars = 48 s + 2 s: over 50.
         let e = check_bars(&bars(24), Some(120.0), true).unwrap_err();
         assert_eq!(e.kind, ApiErrorKind::InvalidParams);
-        assert!(
-            e.message.contains("48.0 s") && e.message.contains("wait: false"),
-            "{}",
-            e.message
-        );
-        assert_eq!(
-            check_bars(&bars(24), Some(120.0), false).unwrap(),
-            MAX_ARM_SECONDS
-        );
+        assert!(e.message.contains("48.0 s") && e.message.contains("wait: false"), "{}", e.message);
+        assert_eq!(check_bars(&bars(24), Some(120.0), false).unwrap(), MAX_ARM_SECONDS);
         // 300 bars = 600 s: over even a background call.
-        assert!(check_bars(&bars(300), Some(120.0), false)
-            .unwrap_err()
-            .message
-            .contains("fewer bars"));
+        assert!(
+            check_bars(&bars(300), Some(120.0), false).unwrap_err().message.contains("fewer bars")
+        );
     }
 
     #[cfg(feature = "midi-clock")]
     #[test]
     fn an_unknown_tempo_can_only_be_recorded_in_the_background() {
         let e = check_bars(&bars(2), None, true).unwrap_err();
-        assert!(
-            e.message.contains("tempo") && e.message.contains("wait: false"),
-            "{}",
-            e.message
-        );
+        assert!(e.message.contains("tempo") && e.message.contains("wait: false"), "{}", e.message);
         assert_eq!(check_bars(&bars(2), None, false).unwrap(), MAX_ARM_SECONDS);
     }
 
@@ -769,16 +689,9 @@ mod tests {
 
     #[test]
     fn a_bars_recording_that_found_no_downbeat_is_an_error_not_an_empty_answer() {
-        let outcome = Outcome {
-            failed: Some("no Start".into()),
-            ..Outcome::default()
-        };
+        let outcome = Outcome { failed: Some("no Start".into()), ..Outcome::default() };
         let e = landed(Some(5), Asked::Bars(4), outcome.into()).unwrap_err();
-        assert!(
-            e.message.contains("recording 5 recorded nothing: no Start"),
-            "{}",
-            e.message
-        );
+        assert!(e.message.contains("recording 5 recorded nothing: no Start"), "{}", e.message);
     }
 
     #[cfg(not(feature = "midi-clock"))]
@@ -786,22 +699,10 @@ mod tests {
     async fn a_build_without_the_clock_refuses_bars_by_name() {
         let service = AudioRecService::new(scratch());
         let e = service
-            .record(
-                vec!["BlackHole 16ch:in:1-2".into()],
-                None,
-                Some(4),
-                None,
-                None,
-                None,
-                None,
-            )
+            .record(vec!["BlackHole 16ch:in:1-2".into()], None, Some(4), None, None, None, None)
             .await
             .unwrap_err();
         assert_eq!(e.kind, ApiErrorKind::InvalidParams);
-        assert!(
-            e.message.contains("without the midi-clock feature"),
-            "{}",
-            e.message
-        );
+        assert!(e.message.contains("without the midi-clock feature"), "{}", e.message);
     }
 }

@@ -42,9 +42,7 @@ pub fn default_config_path() -> PathBuf {
 }
 
 pub fn home() -> PathBuf {
-    std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("/"))
+    std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("/"))
 }
 
 /// Expand a leading `~/` the way a person writing a config file expects.
@@ -64,11 +62,7 @@ pub struct ConfigError {
 
 impl std::fmt::Display for ConfigError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "line {}: {} -- in: {}",
-            self.line_no, self.problem, self.line
-        )
+        write!(f, "line {}: {} -- in: {}", self.line_no, self.problem, self.line)
     }
 }
 
@@ -150,11 +144,7 @@ pub fn parse(text: &str) -> Result<Config, Vec<ConfigError>> {
         }
     }
 
-    if errors.is_empty() {
-        Ok(cfg)
-    } else {
-        Err(errors)
-    }
+    if errors.is_empty() { Ok(cfg) } else { Err(errors) }
 }
 
 fn parse_interval(value: &str) -> Option<u64> {
@@ -216,10 +206,7 @@ mod tests {
     fn the_built_in_default_config_parses() {
         let cfg = parse(DEFAULT_CONFIG).expect("default config must parse");
         assert!(cfg.notify, "notifications should be on by default");
-        assert!(
-            !cfg.allow.is_empty(),
-            "default allow-list should not be empty"
-        );
+        assert!(!cfg.allow.is_empty(), "default allow-list should not be empty");
     }
 
     #[test]
@@ -230,22 +217,10 @@ mod tests {
                 "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
                 Some("com.google.Chrome"),
             ),
-            (
-                "/Applications/Spotify.app/Contents/MacOS/Spotify",
-                Some("com.spotify.client"),
-            ),
-            (
-                "/Applications/Safari.app/Contents/MacOS/Safari",
-                Some("com.apple.Safari"),
-            ),
-            (
-                "/System/Applications/Music.app/Contents/MacOS/Music",
-                Some("com.apple.Music"),
-            ),
-            (
-                "/Applications/Discord.app/Contents/MacOS/Discord",
-                Some("com.hnc.Discord"),
-            ),
+            ("/Applications/Spotify.app/Contents/MacOS/Spotify", Some("com.spotify.client")),
+            ("/Applications/Safari.app/Contents/MacOS/Safari", Some("com.apple.Safari")),
+            ("/System/Applications/Music.app/Contents/MacOS/Music", Some("com.apple.Music")),
+            ("/Applications/Discord.app/Contents/MacOS/Discord", Some("com.hnc.Discord")),
             ("/usr/bin/osascript", None),
         ];
         for (exe, bundle) in expected {
@@ -260,10 +235,7 @@ mod tests {
     fn a_chrome_helper_with_no_bundle_id_is_still_covered_by_path() {
         let cfg = Config::default();
         let helper = "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/154.0.8037.58/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper";
-        let matched = cfg
-            .allow
-            .allows(&rec(helper, None))
-            .expect("helper should be allowed");
+        let matched = cfg.allow.allows(&rec(helper, None)).expect("helper should be allowed");
         assert!(matched.label().starts_with("path "), "{}", matched.label());
     }
 
@@ -290,10 +262,7 @@ mod tests {
         assert!(!cfg.notify);
         assert!(cfg.notify_connect);
         assert_eq!(cfg.log_path, PathBuf::from("/tmp/x.log"));
-        assert!(
-            cfg.allow.is_empty(),
-            "an explicit config starts with no allow rules"
-        );
+        assert!(cfg.allow.is_empty(), "an explicit config starts with no allow rules");
     }
 
     #[test]
@@ -305,10 +274,7 @@ mod tests {
     #[test]
     fn allow_patterns_may_contain_spaces_because_paths_do() {
         let cfg = parse("allow-path /Applications/Google Chrome.app/*\n").unwrap();
-        assert_eq!(
-            cfg.allow.rules[0].pattern,
-            "/Applications/Google Chrome.app/*"
-        );
+        assert_eq!(cfg.allow.rules[0].pattern, "/Applications/Google Chrome.app/*");
     }
 
     #[test]
@@ -317,16 +283,8 @@ mod tests {
         assert_eq!(errs.len(), 4);
         assert_eq!(errs[0].line_no, 1);
         assert!(errs[1].problem.contains("on or off"), "{}", errs[1].problem);
-        assert!(
-            errs[2].problem.contains("needs a pattern"),
-            "{}",
-            errs[2].problem
-        );
-        assert!(
-            errs[3].problem.contains("unknown setting"),
-            "{}",
-            errs[3].problem
-        );
+        assert!(errs[2].problem.contains("needs a pattern"), "{}", errs[2].problem);
+        assert!(errs[3].problem.contains("unknown setting"), "{}", errs[3].problem);
         assert!(errs[0].to_string().contains("line 1"));
     }
 
@@ -346,8 +304,10 @@ mod tests {
 
     #[test]
     fn the_default_log_lives_under_library_logs() {
-        assert!(default_log_path()
-            .to_string_lossy()
-            .ends_with("Library/Logs/audiowatch/audiowatch.log"));
+        assert!(
+            default_log_path()
+                .to_string_lossy()
+                .ends_with("Library/Logs/audiowatch/audiowatch.log")
+        );
     }
 }

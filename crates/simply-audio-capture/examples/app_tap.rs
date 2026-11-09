@@ -10,8 +10,8 @@
 //! Prints the status and the peak level once a second until Ctrl-C. The
 //! first tap may raise macOS's System Audio Recording prompt.
 
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
 use simply_audio_capture::{self as capture, App, AppTap, Mute};

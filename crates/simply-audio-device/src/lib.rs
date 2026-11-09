@@ -208,11 +208,11 @@ pub fn f32_input_config(
     sample_rate: u32,
 ) -> Result<cpal::SupportedStreamConfig, Error> {
     let default = device.default_input_config();
-    if let Ok(config) = &default {
-        if config.sample_format() == cpal::SampleFormat::F32 && config.sample_rate() == sample_rate
-        {
-            return Ok(*config);
-        }
+    if let Ok(config) = &default
+        && config.sample_format() == cpal::SampleFormat::F32
+        && config.sample_rate() == sample_rate
+    {
+        return Ok(*config);
     }
     let mut any_f32 = false;
     for range in device.supported_input_configs()? {

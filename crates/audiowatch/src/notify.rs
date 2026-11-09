@@ -37,11 +37,7 @@ pub fn message_for(record: &Record) -> Message {
     if let Some(note) = &record.note {
         body.push_str(&format!(" -- {note}"));
     }
-    Message {
-        title: format!("{what}: {}", record.short_name()),
-        subtitle,
-        body,
-    }
+    Message { title: format!("{what}: {}", record.short_name()), subtitle, body }
 }
 
 /// Escape a Rust string into an AppleScript string literal's contents.
@@ -125,11 +121,7 @@ mod tests {
 
     #[test]
     fn a_message_names_the_executable_and_the_device() {
-        let m = message_for(&rec(
-            Kind::OutputStart,
-            "/usr/bin/afplay",
-            &["Scarlett 4i4 USB"],
-        ));
+        let m = message_for(&rec(Kind::OutputStart, "/usr/bin/afplay", &["Scarlett 4i4 USB"]));
         assert_eq!(m.title, "Audio output: afplay");
         assert_eq!(m.subtitle, "Scarlett 4i4 USB");
         assert!(m.body.contains("/usr/bin/afplay"), "{}", m.body);
@@ -151,12 +143,8 @@ mod tests {
 
     #[test]
     fn input_and_connect_get_their_own_wording() {
-        assert!(message_for(&rec(Kind::InputStart, "/a/b", &[]))
-            .title
-            .starts_with("Audio input:"));
-        assert!(message_for(&rec(Kind::Connect, "/a/b", &[]))
-            .title
-            .starts_with("Audio connect:"));
+        assert!(message_for(&rec(Kind::InputStart, "/a/b", &[])).title.starts_with("Audio input:"));
+        assert!(message_for(&rec(Kind::Connect, "/a/b", &[])).title.starts_with("Audio connect:"));
     }
 
     #[test]
@@ -181,21 +169,19 @@ mod tests {
     fn control_characters_become_spaces_so_the_script_stays_one_line() {
         let escaped = applescript_escape("a\nb\tc\rd");
         assert_eq!(escaped, "a b c d");
-        assert!(!script_for(&message_for(&{
-            let mut r = rec(Kind::OutputStart, "/a\nb", &[]);
-            r.note = Some("x\ny".into());
-            r
-        }))
-        .contains('\n'));
+        assert!(
+            !script_for(&message_for(&{
+                let mut r = rec(Kind::OutputStart, "/a\nb", &[]);
+                r.note = Some("x\ny".into());
+                r
+            }))
+            .contains('\n')
+        );
     }
 
     #[test]
     fn the_script_never_asks_for_a_sound() {
-        let script = script_for(&message_for(&rec(
-            Kind::OutputStart,
-            "/usr/bin/afplay",
-            &["X"],
-        )));
+        let script = script_for(&message_for(&rec(Kind::OutputStart, "/usr/bin/afplay", &["X"])));
         assert!(!script.contains("sound"), "{script}");
         assert!(script.starts_with("display notification "), "{script}");
     }

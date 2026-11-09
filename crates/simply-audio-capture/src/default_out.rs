@@ -83,16 +83,17 @@ impl<O: Outputs> FollowDefault<O> {
                 None => Err(e),
             };
         };
-        if let Some(open) = &self.open {
-            if open.id == id {
-                self.now.error = self.outputs.health(&open.tap);
-                return Ok(&self.now);
-            }
+        if let Some(open) = &self.open
+            && open.id == id
+        {
+            self.now.error = self.outputs.health(&open.tap);
+            return Ok(&self.now);
         }
-        if let Some((failed, at)) = self.failed {
-            if failed == id && now.duration_since(at) < RETRY {
-                return Ok(&self.now);
-            }
+        if let Some((failed, at)) = self.failed
+            && failed == id
+            && now.duration_since(at) < RETRY
+        {
+            return Ok(&self.now);
         }
         // A clean restart: stop the old tap, start the new one at once.
         if let Some(open) = self.open.take() {

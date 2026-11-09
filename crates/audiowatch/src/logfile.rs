@@ -32,10 +32,7 @@ impl Writer {
         if fresh {
             writeln!(file, "{HEADER}")?;
         }
-        Ok(Self {
-            file,
-            path: path.to_path_buf(),
-        })
+        Ok(Self { file, path: path.to_path_buf() })
     }
 
     pub fn path(&self) -> &Path {
@@ -111,13 +108,7 @@ pub struct Query {
 impl Query {
     /// The kinds worth showing by default: sound actually started or stopped.
     pub fn sound_kinds() -> Vec<Kind> {
-        vec![
-            Kind::OutputStart,
-            Kind::OutputStop,
-            Kind::InputStart,
-            Kind::InputStop,
-            Kind::Baseline,
-        ]
+        vec![Kind::OutputStart, Kind::OutputStop, Kind::InputStart, Kind::InputStop, Kind::Baseline]
     }
 }
 
@@ -198,10 +189,8 @@ mod tests {
         let d = TempDir::new("header");
         let p = d.join("deep/nested/a.log");
         let mut w = Writer::open(&p).unwrap();
-        w.append(&rec(1000, Kind::OutputStart, "/usr/bin/afplay"))
-            .unwrap();
-        w.append(&rec(2000, Kind::OutputStop, "/usr/bin/afplay"))
-            .unwrap();
+        w.append(&rec(1000, Kind::OutputStart, "/usr/bin/afplay")).unwrap();
+        w.append(&rec(2000, Kind::OutputStop, "/usr/bin/afplay")).unwrap();
         let text = std::fs::read_to_string(&p).unwrap();
         assert!(text.starts_with("# audiowatch log v1"));
         assert_eq!(text.lines().count(), 3);
@@ -212,14 +201,8 @@ mod tests {
     fn reopening_appends_rather_than_truncating_and_writes_one_header_only() {
         let d = TempDir::new("append");
         let p = d.join("a.log");
-        Writer::open(&p)
-            .unwrap()
-            .append(&rec(1000, Kind::Connect, "/a"))
-            .unwrap();
-        Writer::open(&p)
-            .unwrap()
-            .append(&rec(2000, Kind::Connect, "/b"))
-            .unwrap();
+        Writer::open(&p).unwrap().append(&rec(1000, Kind::Connect, "/a")).unwrap();
+        Writer::open(&p).unwrap().append(&rec(2000, Kind::Connect, "/b")).unwrap();
         let text = std::fs::read_to_string(&p).unwrap();
         assert_eq!(text.matches("# audiowatch log v1").count(), 1);
         let log = Log::parse(&text);
@@ -269,10 +252,7 @@ mod tests {
             ],
             unreadable: 0,
         };
-        let q = Query {
-            since: Some(2000),
-            ..Default::default()
-        };
+        let q = Query { since: Some(2000), ..Default::default() };
         let hits = log.select(&q);
         assert_eq!(hits.len(), 2);
         assert_eq!(hits[0].exe.as_deref(), Some("/b"));
@@ -281,28 +261,13 @@ mod tests {
     #[test]
     fn last_keeps_the_newest_n_in_order() {
         let log = Log {
-            records: (1..=5)
-                .map(|i| rec(i * 1000, Kind::OutputStart, "/x"))
-                .collect(),
+            records: (1..=5).map(|i| rec(i * 1000, Kind::OutputStart, "/x")).collect(),
             unreadable: 0,
         };
-        let hits = log.select(&Query {
-            last: Some(2),
-            ..Default::default()
-        });
-        assert_eq!(
-            hits.iter().map(|r| r.millis).collect::<Vec<_>>(),
-            vec![4000, 5000]
-        );
+        let hits = log.select(&Query { last: Some(2), ..Default::default() });
+        assert_eq!(hits.iter().map(|r| r.millis).collect::<Vec<_>>(), vec![4000, 5000]);
         // Asking for more than exists is not an error.
-        assert_eq!(
-            log.select(&Query {
-                last: Some(99),
-                ..Default::default()
-            })
-            .len(),
-            5
-        );
+        assert_eq!(log.select(&Query { last: Some(99), ..Default::default() }).len(), 5);
     }
 
     #[test]
@@ -315,10 +280,7 @@ mod tests {
             ],
             unreadable: 0,
         };
-        let q = Query {
-            kinds: Some(Query::sound_kinds()),
-            ..Default::default()
-        };
+        let q = Query { kinds: Some(Query::sound_kinds()), ..Default::default() };
         let hits = log.select(&q);
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].kind, Kind::OutputStart);
@@ -327,20 +289,11 @@ mod tests {
     #[test]
     fn since_and_last_compose() {
         let log = Log {
-            records: (1..=10)
-                .map(|i| rec(i * 1000, Kind::OutputStart, "/x"))
-                .collect(),
+            records: (1..=10).map(|i| rec(i * 1000, Kind::OutputStart, "/x")).collect(),
             unreadable: 0,
         };
-        let hits = log.select(&Query {
-            since: Some(5000),
-            last: Some(2),
-            ..Default::default()
-        });
-        assert_eq!(
-            hits.iter().map(|r| r.millis).collect::<Vec<_>>(),
-            vec![9000, 10000]
-        );
+        let hits = log.select(&Query { since: Some(5000), last: Some(2), ..Default::default() });
+        assert_eq!(hits.iter().map(|r| r.millis).collect::<Vec<_>>(), vec![9000, 10000]);
     }
 
     #[test]
@@ -348,14 +301,8 @@ mod tests {
         let d = TempDir::new("rotate");
         let p = d.join("a.log");
         std::fs::write(&p, vec![b'x'; ROTATE_BYTES as usize + 1]).unwrap();
-        Writer::open(&p)
-            .unwrap()
-            .append(&rec(1000, Kind::Connect, "/a"))
-            .unwrap();
-        assert!(
-            p.with_extension("log.1").exists(),
-            "previous log should be kept aside"
-        );
+        Writer::open(&p).unwrap().append(&rec(1000, Kind::Connect, "/a")).unwrap();
+        assert!(p.with_extension("log.1").exists(), "previous log should be kept aside");
         let log = Log::load(&p).unwrap();
         assert_eq!(log.records.len(), 1);
     }

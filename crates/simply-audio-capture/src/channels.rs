@@ -11,8 +11,8 @@
 use std::collections::{BTreeMap, HashMap};
 use std::time::{Duration, Instant};
 
-use crate::apps::{self, AppInfo, AppTap, Backend, Proc, Target, RETRY};
 use crate::Sink;
+use crate::apps::{self, AppInfo, AppTap, Backend, Proc, RETRY, Target};
 
 /// Where each app's frames go, and what hears an app come and go.
 ///

@@ -47,10 +47,7 @@ fn main() -> ExitCode {
 }
 
 fn run(args: cli::Args) -> Result<(), String> {
-    let config_path = args
-        .config
-        .clone()
-        .unwrap_or_else(config::default_config_path);
+    let config_path = args.config.clone().unwrap_or_else(config::default_config_path);
 
     match args.command {
         Command::Help => {
@@ -76,11 +73,7 @@ fn run(args: cli::Args) -> Result<(), String> {
                     d.name,
                     d.output_channels,
                     d.input_channels,
-                    if d.running_somewhere {
-                        "RUNNING"
-                    } else {
-                        "idle"
-                    }
+                    if d.running_somewhere { "RUNNING" } else { "idle" }
                 );
                 if let Some(uid) = d.uid {
                     println!("{:>36}{uid}", "");
@@ -98,11 +91,7 @@ fn run(args: cli::Args) -> Result<(), String> {
             let (cfg, _) = config::load_or_create(&config_path)?;
             show(
                 &cfg.log_path,
-                Query {
-                    last: Some(last),
-                    kinds: kinds_for(args.all),
-                    ..Default::default()
-                },
+                Query { last: Some(last), kinds: kinds_for(args.all), ..Default::default() },
             )?;
             if follow {
                 println!("-- following {} --", cfg.log_path.display());
@@ -121,20 +110,13 @@ fn run(args: cli::Args) -> Result<(), String> {
             println!("-- since {} --", timefmt::format_local(since));
             show(
                 &cfg.log_path,
-                Query {
-                    since: Some(since),
-                    kinds: kinds_for(args.all),
-                    ..Default::default()
-                },
+                Query { since: Some(since), kinds: kinds_for(args.all), ..Default::default() },
             )
         }
         Command::Watch => {
             let (cfg, created) = config::load_or_create(&config_path)?;
             if created && !args.quiet {
-                println!(
-                    "audiowatch: wrote a default config to {}",
-                    config_path.display()
-                );
+                println!("audiowatch: wrote a default config to {}", config_path.display());
             }
             watch::Watcher::new(cfg, args.quiet)?.run()
         }
@@ -142,11 +124,7 @@ fn run(args: cli::Args) -> Result<(), String> {
 }
 
 fn kinds_for(all: bool) -> Option<Vec<event::Kind>> {
-    if all {
-        None
-    } else {
-        Some(Query::sound_kinds())
-    }
+    if all { None } else { Some(Query::sound_kinds()) }
 }
 
 fn show(log_path: &std::path::Path, query: Query) -> Result<(), String> {
@@ -160,10 +138,7 @@ fn show(log_path: &std::path::Path, query: Query) -> Result<(), String> {
         println!("{}", r.human());
     }
     if log.unreadable > 0 {
-        eprintln!(
-            "audiowatch: {} unreadable line(s) in the log",
-            log.unreadable
-        );
+        eprintln!("audiowatch: {} unreadable line(s) in the log", log.unreadable);
     }
     Ok(())
 }
@@ -198,12 +173,10 @@ fn test_notify() -> Result<(), String> {
             );
             Ok(())
         }
-        Ok(false) => Err(
-            "osascript accepted the notification but Notification Center did not \
+        Ok(false) => Err("osascript accepted the notification but Notification Center did not \
 report delivering it.\n  Check System Settings > Notifications > Script Editor is allowed, and \
 that Do Not Disturb is off."
-                .to_string(),
-        ),
+            .to_string()),
         Err(e) => {
             println!("\nposted, but could not check the system log: {e}");
             Ok(())
@@ -231,11 +204,7 @@ fn install_agent(config_path: &std::path::Path) -> Result<(), String> {
     let (plist, commands) = agent::install(&binary, config_path)?;
     println!("wrote {}", plist.display());
     println!("  binary {}", binary.display());
-    println!(
-        "  config {}{}",
-        config_path.display(),
-        if created { "  (just created)" } else { "" }
-    );
+    println!("  config {}{}", config_path.display(), if created { "  (just created)" } else { "" });
     println!("\nNot loaded. To start it, run:\n\n{commands}\n");
     Ok(())
 }

@@ -355,10 +355,10 @@ impl BarTake {
             self.early = Some((EarlyEnd::Lost, last + self.tick_ns()));
             return;
         }
-        if let (Some(max), Some(start)) = (self.plan.max_take_ns, self.start_ns()) {
-            if now.saturating_sub(start) > max {
-                self.early = Some((EarlyEnd::TooLong, start + max));
-            }
+        if let (Some(max), Some(start)) = (self.plan.max_take_ns, self.start_ns())
+            && now.saturating_sub(start) > max
+        {
+            self.early = Some((EarlyEnd::TooLong, start + max));
         }
     }
 

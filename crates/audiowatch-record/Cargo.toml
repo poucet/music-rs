@@ -2,7 +2,7 @@
 name = "audiowatch-record"
 description = "Record any channel pair of any audio device to 32-bit float WAV: for a length, or trimmed to a window of host time"
 version.workspace = true
-edition = "2021"
+edition.workspace = true
 license.workspace = true
 
 [features]

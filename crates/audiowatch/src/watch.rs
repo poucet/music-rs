@@ -197,18 +197,13 @@ impl Watcher {
         record.disposition = decide(&self.config, &record);
         let notify_it = record.disposition == Disposition::Notified;
         if let Err(e) = self.writer.append(&record) {
-            eprintln!(
-                "audiowatch: cannot write to {}: {e}",
-                self.writer.path().display()
-            );
+            eprintln!("audiowatch: cannot write to {}: {e}", self.writer.path().display());
         }
         if !self.quiet {
             println!("{}", record.human());
         }
-        if notify_it {
-            if let Err(e) = notify::post(&notify::message_for(&record)) {
-                eprintln!("audiowatch: notification failed: {e}");
-            }
+        if notify_it && let Err(e) = notify::post(&notify::message_for(&record)) {
+            eprintln!("audiowatch: notification failed: {e}");
         }
     }
 
@@ -350,13 +345,9 @@ mod tests {
 
     #[test]
     fn connect_and_stop_events_never_notify_by_default() {
-        for kind in [
-            Kind::Connect,
-            Kind::Disconnect,
-            Kind::OutputStop,
-            Kind::Baseline,
-            Kind::InputStart,
-        ] {
+        for kind in
+            [Kind::Connect, Kind::Disconnect, Kind::OutputStop, Kind::Baseline, Kind::InputStart]
+        {
             assert_eq!(
                 decide(&cfg(), &rec(kind, "/usr/bin/mystery", None)),
                 Disposition::Quiet,
@@ -403,14 +394,8 @@ mod tests {
             std::thread::sleep(Duration::from_millis(20));
             signal(true);
         });
-        assert!(
-            wait(Duration::from_secs(5)),
-            "the device flag should survive the handoff"
-        );
-        assert!(
-            start.elapsed() < Duration::from_secs(4),
-            "wait should not have timed out"
-        );
+        assert!(wait(Duration::from_secs(5)), "the device flag should survive the handoff");
+        assert!(start.elapsed() < Duration::from_secs(4), "wait should not have timed out");
         waker.join().unwrap();
 
         // The flags are consumed, so the next wait sleeps for its whole timeout
@@ -422,10 +407,7 @@ mod tests {
         // A process-list event wakes the loop but does not put it in fast mode.
         signal(false);
         let t = Instant::now();
-        assert!(
-            !wait(Duration::from_millis(500)),
-            "a process-list event is not a device event"
-        );
+        assert!(!wait(Duration::from_millis(500)), "a process-list event is not a device event");
         assert!(
             t.elapsed() < Duration::from_millis(400),
             "a pending process-list event should still wake the loop at once"
@@ -445,9 +427,6 @@ mod tests {
         });
         a.join().unwrap();
         b.join().unwrap();
-        assert!(
-            wait(Duration::from_millis(10)),
-            "device event should be pending"
-        );
+        assert!(wait(Duration::from_millis(10)), "device event should be pending");
     }
 }

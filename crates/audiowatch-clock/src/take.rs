@@ -10,8 +10,8 @@
 //! trims every file to it, to the frame.
 
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -156,12 +156,12 @@ fn follow(recording: Recording, mut input: ClockInput, options: BarOptions) -> B
             take.feed(t, msg);
             last_msg = Some((t, Instant::now()));
         }
-        if not_before.is_none() {
-            if let Some(first) = recording.armed_at() {
-                // The first downbeat must fall where every take has audio.
-                not_before = Some(first);
-                take.set_not_before(first);
-            }
+        if not_before.is_none()
+            && let Some(first) = recording.armed_at()
+        {
+            // The first downbeat must fall where every take has audio.
+            not_before = Some(first);
+            take.set_not_before(first);
         }
         if let Some((t, at)) = last_msg {
             take.poll(t + at.elapsed().as_nanos() as u64);

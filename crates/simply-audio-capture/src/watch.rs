@@ -5,7 +5,7 @@
 //! device, is seen at once rather than at the next poll.
 
 use std::collections::BTreeSet;
-use std::sync::{mpsc, Arc, Condvar, Mutex};
+use std::sync::{Arc, Condvar, Mutex, mpsc};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 

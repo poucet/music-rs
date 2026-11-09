@@ -10,9 +10,7 @@ use std::path::{Path, PathBuf};
 pub const LABEL: &str = "local.audiowatch";
 
 pub fn plist_path() -> PathBuf {
-    config::home()
-        .join("Library/LaunchAgents")
-        .join(format!("{LABEL}.plist"))
+    config::home().join("Library/LaunchAgents").join(format!("{LABEL}.plist"))
 }
 
 fn stdio_dir() -> PathBuf {
@@ -114,10 +112,7 @@ mod tests {
 
     #[test]
     fn the_plist_names_the_binary_the_config_and_runs_at_login() {
-        let p = plist(
-            Path::new("/usr/local/bin/audiowatch"),
-            Path::new("/tmp/c.conf"),
-        );
+        let p = plist(Path::new("/usr/local/bin/audiowatch"), Path::new("/tmp/c.conf"));
         assert!(p.contains("<string>local.audiowatch</string>"));
         assert!(p.contains("<string>/usr/local/bin/audiowatch</string>"));
         assert!(p.contains("<string>/tmp/c.conf</string>"));
@@ -132,14 +127,8 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("audiowatch-plist-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let f = dir.join("t.plist");
-        std::fs::write(
-            &f,
-            plist(
-                Path::new("/usr/local/bin/audiowatch"),
-                Path::new("/tmp/c.conf"),
-            ),
-        )
-        .unwrap();
+        std::fs::write(&f, plist(Path::new("/usr/local/bin/audiowatch"), Path::new("/tmp/c.conf")))
+            .unwrap();
         let out = std::process::Command::new("/usr/bin/plutil")
             .arg("-lint")
             .arg(&f)
@@ -158,10 +147,7 @@ mod tests {
     fn a_path_with_xml_metacharacters_cannot_break_the_plist() {
         let nasty = PathBuf::from("/tmp/a&b<c>\"d\".app/audiowatch");
         let p = plist(&nasty, Path::new("/tmp/c.conf"));
-        assert!(
-            p.contains("/tmp/a&amp;b&lt;c&gt;&quot;d&quot;.app/audiowatch"),
-            "{p}"
-        );
+        assert!(p.contains("/tmp/a&amp;b&lt;c&gt;&quot;d&quot;.app/audiowatch"), "{p}");
         assert!(!p.contains("a&b"), "raw ampersand leaked into the plist");
     }
 

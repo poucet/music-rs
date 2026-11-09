@@ -41,20 +41,17 @@ impl App {
     /// or slashes), a pid when it's all digits, else an executable name.
     pub fn parse(s: &str) -> App {
         let s = s.trim();
-        if !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()) {
-            if let Ok(pid) = s.parse() {
-                return App::Pid(pid);
-            }
+        if !s.is_empty()
+            && s.bytes().all(|b| b.is_ascii_digit())
+            && let Ok(pid) = s.parse()
+        {
+            return App::Pid(pid);
         }
         let reverse_dns = s.contains('.')
             && !s.contains([' ', '/'])
             && !s.to_ascii_lowercase().ends_with(".app")
             && s.split('.').all(|p| !p.is_empty());
-        if reverse_dns {
-            App::Bundle(s.to_owned())
-        } else {
-            App::Executable(s.to_owned())
-        }
+        if reverse_dns { App::Bundle(s.to_owned()) } else { App::Executable(s.to_owned()) }
     }
 
     /// Whether process `p` is this app. `this` is the caller's own pid.
@@ -399,10 +396,11 @@ impl<B: Backend> Follow<B> {
             self.status = AppStatus::Waiting { waiting_for: self.tap.names(), reason };
             return &self.status;
         }
-        if let Some((k, at)) = &self.failed {
-            if *k == key && now.duration_since(*at) < RETRY {
-                return &self.status;
-            }
+        if let Some((k, at)) = &self.failed
+            && *k == key
+            && now.duration_since(*at) < RETRY
+        {
+            return &self.status;
         }
         let sink = self.sink.take().expect("no tap holds the sink");
         match self.backend.open(&key, self.tap.mute, sink) {

@@ -75,10 +75,7 @@ pub struct Rule {
 
 impl Rule {
     pub fn new(field: Field, pattern: impl Into<String>) -> Self {
-        Self {
-            field,
-            pattern: pattern.into(),
-        }
+        Self { field, pattern: pattern.into() }
     }
 
     /// How this rule appears in a log line's `allowed:` disposition.
@@ -87,10 +84,7 @@ impl Rule {
     }
 
     fn matches(&self, record: &Record) -> bool {
-        self.field
-            .values_of(record)
-            .iter()
-            .any(|value| glob_match(&self.pattern, value))
+        self.field.values_of(record).iter().any(|value| glob_match(&self.pattern, value))
     }
 }
 
@@ -161,10 +155,7 @@ mod tests {
         assert!(glob_match("afplay", "afplay"));
         assert!(!glob_match("afplay", "afplay2"));
         assert!(glob_match("*", "anything at all"));
-        assert!(glob_match(
-            "com.google.Chrome*",
-            "com.google.Chrome.helper.renderer"
-        ));
+        assert!(glob_match("com.google.Chrome*", "com.google.Chrome.helper.renderer"));
         assert!(glob_match(
             "/Applications/*.app/*",
             "/Applications/Music.app/Contents/MacOS/Music"
@@ -178,14 +169,8 @@ mod tests {
     #[test]
     fn glob_backtracks_rather_than_giving_up_on_the_first_star() {
         // The naive greedy matcher fails this one.
-        assert!(glob_match(
-            "*helper*renderer",
-            "com.x.helper.helper.renderer"
-        ));
-        assert!(glob_match(
-            "*.app/*/MacOS/*",
-            "/Applications/A.app/Contents/MacOS/A"
-        ));
+        assert!(glob_match("*helper*renderer", "com.x.helper.helper.renderer"));
+        assert!(glob_match("*.app/*/MacOS/*", "/Applications/A.app/Contents/MacOS/A"));
         assert!(!glob_match("*renderer", "renderer.gpu"));
     }
 
@@ -197,50 +182,39 @@ mod tests {
 
     #[test]
     fn a_path_rule_matches_the_full_path_only() {
-        let list = AllowList {
-            rules: vec![Rule::new(Field::Path, "/Applications/Google Chrome.app/*")],
-        };
-        assert!(list
-            .allows(&rec(
+        let list =
+            AllowList { rules: vec![Rule::new(Field::Path, "/Applications/Google Chrome.app/*")] };
+        assert!(
+            list.allows(&rec(
                 Some("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"),
                 None
             ))
-            .is_some());
+            .is_some()
+        );
         assert!(list.allows(&rec(Some("/usr/bin/afplay"), None)).is_none());
     }
 
     #[test]
     fn an_exe_rule_matches_the_basename_so_a_short_name_is_enough() {
-        let list = AllowList {
-            rules: vec![Rule::new(Field::Exe, "afplay")],
-        };
+        let list = AllowList { rules: vec![Rule::new(Field::Exe, "afplay")] };
         assert!(list.allows(&rec(Some("/usr/bin/afplay"), None)).is_some());
-        assert!(list
-            .allows(&rec(Some("/opt/homebrew/bin/afplay"), None))
-            .is_some());
+        assert!(list.allows(&rec(Some("/opt/homebrew/bin/afplay"), None)).is_some());
         assert!(list.allows(&rec(Some("/usr/bin/afplayer"), None)).is_none());
     }
 
     #[test]
     fn a_bundle_rule_ignores_a_process_that_has_no_bundle_id() {
-        let list = AllowList {
-            rules: vec![Rule::new(Field::Bundle, "*")],
-        };
+        let list = AllowList { rules: vec![Rule::new(Field::Bundle, "*")] };
         // A bare CLI tool reports no bundle id, so a bundle rule must not
         // silently swallow it -- this is the helper-process case from the brief.
         assert!(list.allows(&rec(Some("/usr/bin/afplay"), None)).is_none());
-        assert!(list
-            .allows(&rec(Some("/usr/bin/afplay"), Some("com.apple.afplay")))
-            .is_some());
+        assert!(list.allows(&rec(Some("/usr/bin/afplay"), Some("com.apple.afplay"))).is_some());
     }
 
     #[test]
     fn the_first_matching_rule_is_the_one_reported() {
         let list = AllowList {
-            rules: vec![
-                Rule::new(Field::Exe, "afplay"),
-                Rule::new(Field::Path, "/usr/bin/*"),
-            ],
+            rules: vec![Rule::new(Field::Exe, "afplay"), Rule::new(Field::Path, "/usr/bin/*")],
         };
         let matched = list.allows(&rec(Some("/usr/bin/afplay"), None)).unwrap();
         assert_eq!(matched.label(), "exe afplay");
@@ -248,9 +222,7 @@ mod tests {
 
     #[test]
     fn an_empty_list_allows_nothing() {
-        assert!(AllowList::default()
-            .allows(&rec(Some("/usr/bin/afplay"), None))
-            .is_none());
+        assert!(AllowList::default().allows(&rec(Some("/usr/bin/afplay"), None)).is_none());
         assert!(AllowList::default().is_empty());
     }
 
@@ -269,22 +241,13 @@ mod tests {
         let mut r = Record::new(0, Kind::OutputStart, 87533);
         r.exe = Some("/usr/bin/afplay".into());
         r.parents = vec![
-            crate::proc::Ancestor {
-                pid: 87535,
-                exe: Some("/bin/zsh".into()),
-            },
-            crate::proc::Ancestor {
-                pid: 80740,
-                exe: Some("/opt/homebrew/bin/claude".into()),
-            },
+            crate::proc::Ancestor { pid: 87535, exe: Some("/bin/zsh".into()) },
+            crate::proc::Ancestor { pid: 80740, exe: Some("/opt/homebrew/bin/claude".into()) },
         ];
 
         let mut list = AllowList::default();
         list.push(Rule::new(Field::Ancestor, "claude"));
-        assert!(
-            list.allows(&r).is_some(),
-            "the grandparent's name is enough"
-        );
+        assert!(list.allows(&r).is_some(), "the grandparent's name is enough");
 
         let mut by_path = AllowList::default();
         by_path.push(Rule::new(Field::Ancestor, "/opt/homebrew/*"));
@@ -302,10 +265,7 @@ mod tests {
     #[test]
     fn an_unreadable_ancestor_matches_no_rule() {
         let mut r = Record::new(0, Kind::OutputStart, 500);
-        r.parents = vec![crate::proc::Ancestor {
-            pid: 400,
-            exe: None,
-        }];
+        r.parents = vec![crate::proc::Ancestor { pid: 400, exe: None }];
         let mut list = AllowList::default();
         list.push(Rule::new(Field::Ancestor, "*"));
         assert!(list.allows(&r).is_none());

@@ -149,10 +149,7 @@ impl Record {
             self.note.clone().unwrap_or_default(),
             encode_parents(&self.parents),
         ];
-        cols.iter()
-            .map(|c| escape(c))
-            .collect::<Vec<_>>()
-            .join("\t")
+        cols.iter().map(|c| escape(c)).collect::<Vec<_>>().join("\t")
     }
 
     pub fn decode(line: &str) -> Option<Self> {
@@ -234,24 +231,16 @@ fn decode_parents(col: &str) -> Vec<Ancestor> {
     }
     col.split(", ")
         .filter_map(|entry| match entry.split_once(' ') {
-            Some((pid, exe)) => Some(Ancestor {
-                pid: pid.parse().ok()?,
-                exe: Some(exe.to_string()),
-            }),
-            None => Some(Ancestor {
-                pid: entry.parse().ok()?,
-                exe: None,
-            }),
+            Some((pid, exe)) => {
+                Some(Ancestor { pid: pid.parse().ok()?, exe: Some(exe.to_string()) })
+            }
+            None => Some(Ancestor { pid: entry.parse().ok()?, exe: None }),
         })
         .collect()
 }
 
 fn some_if_set(s: &str) -> Option<String> {
-    if s.is_empty() {
-        None
-    } else {
-        Some(s.to_string())
-    }
+    if s.is_empty() { None } else { Some(s.to_string()) }
 }
 
 fn escape(s: &str) -> String {
@@ -305,14 +294,8 @@ mod tests {
             exe: Some("/usr/bin/afplay".into()),
             devices: vec!["Scarlett 4i4 USB".into(), "BlackHole 2ch".into()],
             parents: vec![
-                Ancestor {
-                    pid: 80740,
-                    exe: Some("/opt/homebrew/bin/claude".into()),
-                },
-                Ancestor {
-                    pid: 1,
-                    exe: Some("/sbin/launchd".into()),
-                },
+                Ancestor { pid: 80740, exe: Some("/opt/homebrew/bin/claude".into()) },
+                Ancestor { pid: 1, exe: Some("/sbin/launchd".into()) },
             ],
             note: None,
         }
@@ -353,12 +336,7 @@ mod tests {
     #[test]
     fn a_line_written_before_the_process_tree_still_decodes() {
         let full = sample();
-        let old: String = full
-            .encode()
-            .split('\t')
-            .take(9)
-            .collect::<Vec<_>>()
-            .join("\t");
+        let old: String = full.encode().split('\t').take(9).collect::<Vec<_>>().join("\t");
         let back = Record::decode(&old).expect("nine columns still decode");
         assert!(back.parents.is_empty());
         assert_eq!(back.exe, full.exe);
@@ -370,25 +348,12 @@ mod tests {
     fn the_chain_round_trips_through_the_log() {
         let mut r = sample();
         r.parents = vec![
-            Ancestor {
-                pid: 87533,
-                exe: Some("/bin/zsh".into()),
-            },
-            Ancestor {
-                pid: 400,
-                exe: None,
-            },
-            Ancestor {
-                pid: 1,
-                exe: Some("/sbin/launchd".into()),
-            },
+            Ancestor { pid: 87533, exe: Some("/bin/zsh".into()) },
+            Ancestor { pid: 400, exe: None },
+            Ancestor { pid: 1, exe: Some("/sbin/launchd".into()) },
         ];
         assert_eq!(Record::decode(&r.encode()), Some(r.clone()));
-        assert!(
-            r.human().contains("← zsh ← pid 400 ← launchd"),
-            "{}",
-            r.human()
-        );
+        assert!(r.human().contains("← zsh ← pid 400 ← launchd"), "{}", r.human());
     }
 
     #[test]
@@ -397,11 +362,7 @@ mod tests {
         r.exe = Some("/tmp/we\tird\npath\\here".into());
         r.note = Some("two\tcolumns?".into());
         let line = r.encode();
-        assert_eq!(
-            line.split('\t').count(),
-            10,
-            "escaping leaked a column: {line}"
-        );
+        assert_eq!(line.split('\t').count(), 10, "escaping leaked a column: {line}");
         assert_eq!(Record::decode(&line), Some(r));
     }
 

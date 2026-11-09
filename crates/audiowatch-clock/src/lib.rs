@@ -20,4 +20,4 @@ pub mod take;
 
 pub use port::{ClockError, ClockInput, ClockPort};
 pub use reading::BarPlan;
-pub use take::{record_bars, BarOptions, BarOutcome, BarRecording, ClockReport};
+pub use take::{BarOptions, BarOutcome, BarRecording, ClockReport, record_bars};

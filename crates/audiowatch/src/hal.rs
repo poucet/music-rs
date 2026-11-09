@@ -110,10 +110,7 @@ impl CoreAudio {
     }
 
     pub fn devices(&self) -> Vec<DeviceInfo> {
-        self.device_objects()
-            .into_iter()
-            .map(|d| self.device_info(d))
-            .collect()
+        self.device_objects().into_iter().map(|d| self.device_info(d)).collect()
     }
 }
 
@@ -129,20 +126,15 @@ impl HalView for CoreAudio {
     fn running(&self, object: AudioObjectId) -> Option<RunningState> {
         // Two property reads, and no `proc_pidpath` syscall. An unreadable
         // object answers `None` so the caller does not mistake it for idle.
-        let output = sys::get::<u32>(
-            object,
-            &PropertyAddress::global(sys::PROP_PROCESS_IS_RUNNING_OUTPUT),
-        )
-        .ok()?;
+        let output =
+            sys::get::<u32>(object, &PropertyAddress::global(sys::PROP_PROCESS_IS_RUNNING_OUTPUT))
+                .ok()?;
         let input = sys::get_u32_or(
             object,
             &PropertyAddress::global(sys::PROP_PROCESS_IS_RUNNING_INPUT),
             0,
         );
-        Some(RunningState {
-            output: output == 1,
-            input: input == 1,
-        })
+        Some(RunningState { output: output == 1, input: input == 1 })
     }
 
     fn details(&self, object: AudioObjectId) -> Option<ProcessDetails> {
@@ -158,10 +150,7 @@ impl HalView for CoreAudio {
         .collect();
         Some(ProcessDetails {
             pid,
-            bundle: sys::get_string(
-                object,
-                &PropertyAddress::global(sys::PROP_PROCESS_BUNDLE_ID),
-            ),
+            bundle: sys::get_string(object, &PropertyAddress::global(sys::PROP_PROCESS_BUNDLE_ID)),
             exe: sys::pid_path(pid),
             devices,
             parents: proc::live_chain(pid),
@@ -236,16 +225,10 @@ mod tests {
         // clients, and every one of them must report a pid.
         let hal = CoreAudio::new();
         let objects = hal.process_objects();
-        assert!(
-            !objects.is_empty(),
-            "the HAL should always have client processes"
-        );
+        assert!(!objects.is_empty(), "the HAL should always have client processes");
         for o in &objects {
             // The hot read must work for every listed object.
-            assert!(
-                hal.running(*o).is_some(),
-                "process object {o} would not report its flags"
-            );
+            assert!(hal.running(*o).is_some(), "process object {o} would not report its flags");
             if let Some(d) = hal.details(*o) {
                 assert!(d.pid > 0, "process object {o} reported pid {}", d.pid);
             }
@@ -258,10 +241,7 @@ mod tests {
         let devices = hal.devices();
         assert!(!devices.is_empty(), "this machine has audio devices");
         let with_output: Vec<_> = devices.iter().filter(|d| d.output_channels > 0).collect();
-        assert!(
-            !with_output.is_empty(),
-            "at least one device should have output channels"
-        );
+        assert!(!with_output.is_empty(), "at least one device should have output channels");
         for d in &devices {
             assert!(!d.name.is_empty());
         }

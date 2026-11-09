@@ -43,10 +43,10 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use simply_audio_capture::{Capture, ErrorKind, Source};
 
-use crate::catalog::{self, choose_rate, pick, route, PickError, Route, RouteRefusal};
+use crate::catalog::{self, PickError, Route, RouteRefusal, choose_rate, pick, route};
 use crate::frames::extract;
 use crate::spec::{Channels, SpecError, TakeSpec};
-use crate::wav::{pump, trim, WavSink};
+use crate::wav::{WavSink, pump, trim};
 
 /// How many seconds of audio a take's ring holds before it overflows — the
 /// time a writer can stall (a slow disk, a busy machine) without losing a
@@ -769,10 +769,10 @@ fn frame_limit(seconds: Option<f64>, rate: u32) -> u64 {
 /// Copy a stream error the capture reported into the take's counters, where
 /// the handle's status reads it.
 fn note_error(o: &Open) {
-    if let Some(e) = o.capture.error() {
-        if let Ok(mut slot) = o.counters.error.lock() {
-            slot.get_or_insert(e);
-        }
+    if let Some(e) = o.capture.error()
+        && let Ok(mut slot) = o.counters.error.lock()
+    {
+        slot.get_or_insert(e);
     }
 }
 

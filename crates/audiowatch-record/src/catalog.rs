@@ -28,7 +28,7 @@ use std::fmt;
 use cpal::traits::{DeviceTrait, HostTrait};
 
 use crate::spec::Channels;
-use simply_audio_device::{device_name, Direction};
+use simply_audio_device::{Direction, device_name};
 
 /// A range of sample rates one configuration supports (often `min == max`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -131,11 +131,11 @@ impl fmt::Display for RouteRefusal {
 impl std::error::Error for RouteRefusal {}
 
 /// Decide how `dir` of `info` is recorded, and at which side's width.
-pub fn route<'a>(
-    info: &'a DeviceInfo,
+pub fn route(
+    info: &DeviceInfo,
     dir: Direction,
     keep: Channels,
-) -> Result<(Route, &'a SideInfo), RouteRefusal> {
+) -> Result<(Route, &SideInfo), RouteRefusal> {
     let device = info.name.clone();
     let (route, side) = match dir {
         Direction::Input => match &info.input {

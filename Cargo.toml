@@ -46,3 +46,9 @@ simply-audio-device = { path = "crates/simply-audio-device" }
 simply-audio-capture = { path = "crates/simply-audio-capture" }
 audiowatch-record = { path = "crates/audiowatch-record" }
 audiowatch-clock = { path = "crates/audiowatch-clock" }
+
+# audiowatch's release binary: a small, stripped background tool. Scoped to
+# its own package so no other crate's release build changes.
+[profile.release.package.audiowatch]
+opt-level = 2
+strip = true

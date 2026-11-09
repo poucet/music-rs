@@ -2,7 +2,7 @@
 name = "audiowatch"
 description = "Watches which processes put audio on this Mac's CoreAudio output devices, and records any device's channels to WAV for an agent."
 version.workspace = true
-edition = "2021"
+edition.workspace = true
 license.workspace = true
 publish = false
 
@@ -30,14 +30,16 @@ audiowatch-clock = { workspace = true, features = ["schema"], optional = true }
 simply-api = { git = "https://github.com/poucet/simply-api", tag = "v0.1.1" }
 async-trait = "0.1"
 axum = "0.8"
-rmcp = { version = "3.1.4", features = ["server", "transport-streamable-http-server"] }
+# 3.7 for `ServerConfig` and `ClientConfig`, the names that replaced the
+# deprecated `ServerInfo` and `ClientInfo`.
+rmcp = { version = "3.7", features = ["server", "transport-streamable-http-server"] }
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal"] }
 
 [dev-dependencies]
-rmcp = { version = "3.1.4", features = [
+rmcp = { version = "3.7", features = [
     "client",
     "transport-streamable-http-client",
     "transport-streamable-http-client-reqwest",

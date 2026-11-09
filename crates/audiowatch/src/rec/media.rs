@@ -67,14 +67,8 @@ fn summary(r: &Recorded) -> String {
         ));
     }
     for t in &r.takes {
-        let length = t
-            .duration_s
-            .map(|d| format!(", {d:.3} s"))
-            .unwrap_or_default();
-        out.push_str(&format!(
-            "\n{} → {} ({} Hz{length})",
-            t.spec, t.path, t.sample_rate
-        ));
+        let length = t.duration_s.map(|d| format!(", {d:.3} s")).unwrap_or_default();
+        out.push_str(&format!("\n{} → {} ({} Hz{length})", t.spec, t.path, t.sample_rate));
     }
     for w in &r.warnings {
         out.push_str(&format!("\nwarning: {w}"));
@@ -144,10 +138,7 @@ mod tests {
 
     #[test]
     fn a_file_uri_is_percent_encoded() {
-        assert_eq!(
-            file_uri(Path::new("/a b/c#1.wav")),
-            "file:///a%20b/c%231.wav"
-        );
+        assert_eq!(file_uri(Path::new("/a b/c#1.wav")), "file:///a%20b/c%231.wav");
         assert_eq!(file_uri(Path::new("/r/x-1_2.wav")), "file:///r/x-1_2.wav");
     }
 
@@ -156,26 +147,14 @@ mod tests {
         let blocks = recorded(true).into_content_blocks();
         let json = serde_json::to_value(&blocks).unwrap();
         let text = json[0]["text"].as_str().unwrap();
-        assert!(
-            text.contains("/Users/x/Music/audio-rec/blackhole 16ch.wav"),
-            "{text}"
-        );
-        let link = blocks
-            .iter()
-            .find_map(|b| b.as_resource_link())
-            .expect("a resource link");
-        assert_eq!(
-            link.uri,
-            "file:///Users/x/Music/audio-rec/blackhole%2016ch.wav"
-        );
+        assert!(text.contains("/Users/x/Music/audio-rec/blackhole 16ch.wav"), "{text}");
+        let link = blocks.iter().find_map(|b| b.as_resource_link()).expect("a resource link");
+        assert_eq!(link.uri, "file:///Users/x/Music/audio-rec/blackhole%2016ch.wav");
         assert_eq!(link.mime_type.as_deref(), Some("audio/wav"));
         assert_eq!(link.name, "blackhole 16ch.wav");
         for b in &json.as_array().unwrap()[..] {
             let kind = b["type"].as_str().unwrap();
-            assert!(
-                kind == "text" || kind == "resource_link",
-                "{kind} must not carry audio"
-            );
+            assert!(kind == "text" || kind == "resource_link", "{kind} must not carry audio");
         }
     }
 
@@ -184,10 +163,7 @@ mod tests {
         let blocks = recorded(false).into_content_blocks();
         assert!(blocks.iter().all(|b| b.as_resource_link().is_none()));
         let json = serde_json::to_value(&blocks).unwrap();
-        assert!(json[0]["text"]
-            .as_str()
-            .unwrap()
-            .contains("NOT readable yet"));
+        assert!(json[0]["text"].as_str().unwrap().contains("NOT readable yet"));
     }
 
     #[test]
@@ -197,9 +173,6 @@ mod tests {
         let blocks = r.into_content_blocks();
         let json = serde_json::to_value(&blocks).unwrap();
         let text = json[0]["text"].as_str().unwrap();
-        assert!(
-            text.contains("4 bar(s) on the MIDI clock") && text.contains("downbeat"),
-            "{text}"
-        );
+        assert!(text.contains("4 bar(s) on the MIDI clock") && text.contains("downbeat"), "{text}");
     }
 }

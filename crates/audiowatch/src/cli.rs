@@ -83,19 +83,13 @@ pub fn parse(args: &[String]) -> Result<Args, String> {
             "--install-agent" => set(Command::InstallAgent, &mut command)?,
             "--paths" => set(Command::Paths, &mut command)?,
             "--tail" | "tail" => {
-                set(
-                    Command::Tail {
-                        last: DEFAULT_TAIL,
-                        follow: false,
-                    },
-                    &mut command,
-                )?;
+                set(Command::Tail { last: DEFAULT_TAIL, follow: false }, &mut command)?;
                 // An optional count may follow, as `--tail 50`.
-                if let Some(next) = args.get(i + 1) {
-                    if let Ok(n) = next.parse::<usize>() {
-                        tail_count = Some(n);
-                        i += 1;
-                    }
+                if let Some(next) = args.get(i + 1)
+                    && let Ok(n) = next.parse::<usize>()
+                {
+                    tail_count = Some(n);
+                    i += 1;
                 }
             }
             "--since" | "since" => {
@@ -106,22 +100,15 @@ pub fn parse(args: &[String]) -> Result<Args, String> {
                 i += 1;
             }
             "-n" => {
-                let n = args
-                    .get(i + 1)
-                    .ok_or_else(|| "-n needs a number".to_string())?;
-                tail_count = Some(
-                    n.parse()
-                        .map_err(|_| format!("-n needs a number, not '{n}'"))?,
-                );
+                let n = args.get(i + 1).ok_or_else(|| "-n needs a number".to_string())?;
+                tail_count = Some(n.parse().map_err(|_| format!("-n needs a number, not '{n}'"))?);
                 i += 1;
             }
             "-f" | "--follow" => follow = true,
             "--all" => all = true,
             "--quiet" | "-q" => quiet = true,
             "--config" => {
-                let p = args
-                    .get(i + 1)
-                    .ok_or_else(|| "--config needs a path".to_string())?;
+                let p = args.get(i + 1).ok_or_else(|| "--config needs a path".to_string())?;
                 config = Some(crate::config::expand_tilde(p));
                 i += 1;
             }
@@ -140,12 +127,7 @@ pub fn parse(args: &[String]) -> Result<Args, String> {
         return Err("-n only makes sense with --tail".to_string());
     }
 
-    Ok(Args {
-        command,
-        config,
-        all,
-        quiet,
-    })
+    Ok(Args { command, config, all, quiet })
 }
 
 #[cfg(test)]
@@ -166,65 +148,33 @@ mod tests {
 
     #[test]
     fn tail_takes_a_count_either_way_and_defaults_to_twenty() {
-        assert_eq!(
-            p(&["--tail"]).unwrap().command,
-            Command::Tail {
-                last: 20,
-                follow: false
-            }
-        );
+        assert_eq!(p(&["--tail"]).unwrap().command, Command::Tail { last: 20, follow: false });
         assert_eq!(
             p(&["--tail", "50"]).unwrap().command,
-            Command::Tail {
-                last: 50,
-                follow: false
-            }
+            Command::Tail { last: 50, follow: false }
         );
         assert_eq!(
             p(&["--tail", "-n", "5"]).unwrap().command,
-            Command::Tail {
-                last: 5,
-                follow: false
-            }
+            Command::Tail { last: 5, follow: false }
         );
-        assert_eq!(
-            p(&["tail"]).unwrap().command,
-            Command::Tail {
-                last: 20,
-                follow: false
-            }
-        );
+        assert_eq!(p(&["tail"]).unwrap().command, Command::Tail { last: 20, follow: false });
     }
 
     #[test]
     fn follow_works_in_both_spellings_and_either_order() {
-        assert_eq!(
-            p(&["--tail", "-f"]).unwrap().command,
-            Command::Tail {
-                last: 20,
-                follow: true
-            }
-        );
+        assert_eq!(p(&["--tail", "-f"]).unwrap().command, Command::Tail { last: 20, follow: true });
         assert_eq!(
             p(&["--follow", "--tail", "3"]).unwrap().command,
-            Command::Tail {
-                last: 3,
-                follow: true
-            }
+            Command::Tail { last: 3, follow: true }
         );
     }
 
     #[test]
     fn since_captures_its_argument() {
-        assert_eq!(
-            p(&["--since", "2h"]).unwrap().command,
-            Command::Since { spec: "2h".into() }
-        );
+        assert_eq!(p(&["--since", "2h"]).unwrap().command, Command::Since { spec: "2h".into() });
         assert_eq!(
             p(&["since", "2026-09-26T11:00"]).unwrap().command,
-            Command::Since {
-                spec: "2026-09-26T11:00".into()
-            }
+            Command::Since { spec: "2026-09-26T11:00".into() }
         );
         assert!(p(&["--since"]).unwrap_err().contains("needs a time"));
     }
@@ -233,10 +183,7 @@ mod tests {
     fn a_count_after_since_is_not_swallowed_as_a_tail_count() {
         // `--since 30` is a bad time spec, not a tail count -- the error comes
         // later, from the time parser, but the argument must reach it.
-        assert_eq!(
-            p(&["--since", "30"]).unwrap().command,
-            Command::Since { spec: "30".into() }
-        );
+        assert_eq!(p(&["--since", "30"]).unwrap().command, Command::Since { spec: "30".into() });
     }
 
     #[test]
@@ -245,10 +192,7 @@ mod tests {
         assert_eq!(p(&["now"]).unwrap().command, Command::Now);
         assert_eq!(p(&["--devices"]).unwrap().command, Command::Devices);
         assert_eq!(p(&["--test-notify"]).unwrap().command, Command::TestNotify);
-        assert_eq!(
-            p(&["--install-agent"]).unwrap().command,
-            Command::InstallAgent
-        );
+        assert_eq!(p(&["--install-agent"]).unwrap().command, Command::InstallAgent);
         assert_eq!(p(&["--paths"]).unwrap().command, Command::Paths);
         assert_eq!(p(&["-h"]).unwrap().command, Command::Help);
     }
@@ -256,13 +200,7 @@ mod tests {
     #[test]
     fn options_are_picked_up_alongside_a_command() {
         let a = p(&["--tail", "5", "--all", "--quiet", "--config", "/tmp/x.conf"]).unwrap();
-        assert_eq!(
-            a.command,
-            Command::Tail {
-                last: 5,
-                follow: false
-            }
-        );
+        assert_eq!(a.command, Command::Tail { last: 5, follow: false });
         assert!(a.all);
         assert!(a.quiet);
         assert_eq!(a.config, Some(PathBuf::from("/tmp/x.conf")));
@@ -287,9 +225,7 @@ mod tests {
         assert!(e.contains("--help"), "{e}");
         assert!(p(&["-n", "x"]).is_err());
         assert!(p(&["--config"]).is_err());
-        assert!(p(&["-n", "5"])
-            .unwrap_err()
-            .contains("only makes sense with --tail"));
+        assert!(p(&["-n", "5"]).unwrap_err().contains("only makes sense with --tail"));
     }
 
     #[test]

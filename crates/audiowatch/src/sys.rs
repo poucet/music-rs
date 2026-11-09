@@ -63,18 +63,10 @@ pub struct PropertyAddress {
 
 impl PropertyAddress {
     pub const fn global(selector: Selector) -> Self {
-        Self {
-            selector,
-            scope: SCOPE_GLOBAL,
-            element: ELEMENT_MAIN,
-        }
+        Self { selector, scope: SCOPE_GLOBAL, element: ELEMENT_MAIN }
     }
     pub const fn scoped(selector: Selector, scope: Scope) -> Self {
-        Self {
-            selector,
-            scope,
-            element: ELEMENT_MAIN,
-        }
+        Self { selector, scope, element: ELEMENT_MAIN }
     }
 }
 
@@ -82,7 +74,7 @@ pub type ListenerProc =
     extern "C" fn(AudioObjectId, u32, *const PropertyAddress, *mut c_void) -> OsStatus;
 
 #[link(name = "CoreAudio", kind = "framework")]
-extern "C" {
+unsafe extern "C" {
     fn AudioObjectGetPropertyDataSize(
         object: AudioObjectId,
         address: *const PropertyAddress,
@@ -112,14 +104,14 @@ pub type CfTypeRef = *const c_void;
 pub type CfStringRef = *const c_void;
 
 #[link(name = "CoreFoundation", kind = "framework")]
-extern "C" {
+unsafe extern "C" {
     fn CFRelease(cf: CfTypeRef);
     fn CFStringGetCString(s: CfStringRef, buf: *mut c_char, size: isize, encoding: u32) -> u8;
 }
 
 const CF_STRING_ENCODING_UTF8: u32 = 0x0800_0100;
 
-extern "C" {
+unsafe extern "C" {
     fn proc_pidpath(pid: c_int, buffer: *mut c_void, buffersize: u32) -> c_int;
     fn localtime_r(time: *const i64, result: *mut Tm) -> *mut Tm;
     fn mktime(tm: *mut Tm) -> i64;
@@ -207,14 +199,7 @@ impl std::error::Error for HalError {}
 type HalResult<T> = Result<T, HalError>;
 
 fn check(address: &PropertyAddress, status: OsStatus) -> HalResult<()> {
-    if status == 0 {
-        Ok(())
-    } else {
-        Err(HalError {
-            selector: address.selector,
-            status,
-        })
-    }
+    if status == 0 { Ok(()) } else { Err(HalError { selector: address.selector, status }) }
 }
 
 /// Read a fixed-size property value.
@@ -234,10 +219,7 @@ pub fn get<T: Copy>(object: AudioObjectId, address: &PropertyAddress) -> HalResu
     };
     check(address, status)?;
     if size as usize != std::mem::size_of::<T>() {
-        return Err(HalError {
-            selector: address.selector,
-            status: -1,
-        });
+        return Err(HalError { selector: address.selector, status: -1 });
     }
     // SAFETY: the HAL wrote a full `T`, as just verified by the size check.
     Ok(unsafe { value.assume_init() })
@@ -288,29 +270,16 @@ pub fn get_string(object: AudioObjectId, address: &PropertyAddress) -> Option<St
     let mut buf = vec![0i8; 1024];
     // SAFETY: `cf` is a +1 CFString from the HAL; `buf` is writable for its length.
     let ok = unsafe {
-        CFStringGetCString(
-            cf,
-            buf.as_mut_ptr(),
-            buf.len() as isize,
-            CF_STRING_ENCODING_UTF8,
-        )
+        CFStringGetCString(cf, buf.as_mut_ptr(), buf.len() as isize, CF_STRING_ENCODING_UTF8)
     };
     // SAFETY: the HAL documents this property as a +1 CFObject the caller releases.
     unsafe { CFRelease(cf) };
     if ok == 0 {
         return None;
     }
-    let bytes: Vec<u8> = buf
-        .iter()
-        .take_while(|c| **c != 0)
-        .map(|c| *c as u8)
-        .collect();
+    let bytes: Vec<u8> = buf.iter().take_while(|c| **c != 0).map(|c| *c as u8).collect();
     let s = String::from_utf8(bytes).ok()?;
-    if s.is_empty() {
-        None
-    } else {
-        Some(s)
-    }
+    if s.is_empty() { None } else { Some(s) }
 }
 
 /// Register a listener. Returns the raw status so callers can decide whether a
@@ -356,10 +325,7 @@ mod tests {
     #[test]
     fn pid_path_finds_this_process_and_rejects_nonsense() {
         let me = pid_path(std::process::id() as i32).expect("own path");
-        assert!(
-            me.contains("audiowatch") || me.contains("sys-"),
-            "unexpected path {me}"
-        );
+        assert!(me.contains("audiowatch") || me.contains("sys-"), "unexpected path {me}");
         assert_eq!(pid_path(0), None);
         assert_eq!(pid_path(-1), None);
     }
@@ -413,7 +379,7 @@ struct ProcBsdInfo {
 // 48 + 48 + 24 + 16 = 136. The kernel checks this number, so we check it too.
 const _: () = assert!(core::mem::size_of::<ProcBsdInfo>() == 136);
 
-extern "C" {
+unsafe extern "C" {
     fn proc_pidinfo(
         pid: c_int,
         flavor: c_int,
@@ -457,13 +423,7 @@ pub fn pid_ppid(pid: i32) -> Option<i32> {
     // SAFETY: `info` is writable for exactly `size` bytes, which is the size
     // this flavour requires.
     let n = unsafe {
-        proc_pidinfo(
-            pid,
-            PROC_PIDTBSDINFO,
-            0,
-            (&mut info as *mut ProcBsdInfo).cast(),
-            size,
-        )
+        proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, (&mut info as *mut ProcBsdInfo).cast(), size)
     };
     if n != size {
         return None;
