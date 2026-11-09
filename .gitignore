@@ -15,3 +15,6 @@ docs/scratch/
 # Python bytecode from the repo scripts
 __pycache__/
 *.swp
+/AGENTS.md
+/AGENTS.project.md
+/.claude/agents
