@@ -5,6 +5,15 @@ format is stated once in AGENTS.md §2.
 
 ## Unreleased
 
+#### An app tap says when it reconnected · 2026-11-11 08:06 · wltvulrr
+
+- **Added: `AppCapture::remade()`** and the `Remade` it returns: when a running
+  app tap went bad while its apps were still wanted (it stopped calling back
+  while one played, as after the Mac sleeps, or its clock device disappeared)
+  and was made again, how many times so far, and why the last time. The status
+  goes from tapping to tapping meanwhile, so this is what lets a UI say the tap
+  reconnected. Additive: `AppStatus` is unchanged.
+
 #### Audio capture, device selection and audiowatch live here · 2026-11-09 16:39 · rzsplyly
 
 - **Added: `simply-audio-device` and `simply-audio-capture`**, the audio half

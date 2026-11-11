@@ -32,7 +32,7 @@ use objc2_core_foundation::CFDictionary;
 use objc2_foundation::{NSArray, NSDictionary, NSNumber, NSString, NSUUID};
 
 use crate::apps::{
-    self, AppInfo, AppStatus, AppTap, Backend, Follow, Mute, Proc, STALL, Stall, Target,
+    self, AppInfo, AppStatus, AppTap, Backend, Follow, Mute, Proc, Remade, STALL, Stall, Target,
 };
 use crate::channels::{AppSinks, ChannelsStatus, Split};
 use crate::default_out::{FollowDefault, Now, Outputs};
@@ -924,7 +924,8 @@ fn app_backend(
 
 /// A running app follower: its thread owns the [`Follow`] and the tap.
 pub(crate) struct Following {
-    status: Arc<Mutex<AppStatus>>,
+    /// Its status, and the last time its tap was remade.
+    status: Arc<Mutex<(AppStatus, Option<Remade>)>>,
     _watcher: Watcher,
 }
 
@@ -950,14 +951,15 @@ impl Following {
         sink: Sink,
         poll: Duration,
     ) -> Result<Following, Error> {
-        let status = Arc::new(Mutex::new(AppStatus::Failed { error: "starting".into() }));
+        let status = Arc::new(Mutex::new((AppStatus::Failed { error: "starting".into() }, None)));
         let wake = Arc::new(Wake::new(poll));
         let backend = app_backend(&tap, rate, channels, &wake);
         let mut follow = Follow::new(backend, tap, std::process::id() as i32, sink);
         let shared = Arc::clone(&status);
         let watcher = Watcher::start("audio app tap", wake, &APPS_WATCHED, move |now| {
             let s = follow.tick(now).clone();
-            *shared.lock().unwrap_or_else(|e| e.into_inner()) = s.clone();
+            *shared.lock().unwrap_or_else(|e| e.into_inner()) =
+                (s.clone(), follow.remade().cloned());
             match s {
                 AppStatus::Failed { error } => Err(Error::new(ErrorKind::Device, error)),
                 _ => Ok(()),
@@ -967,7 +969,11 @@ impl Following {
     }
 
     pub(crate) fn status(&self) -> AppStatus {
-        self.status.lock().unwrap_or_else(|e| e.into_inner()).clone()
+        self.status.lock().unwrap_or_else(|e| e.into_inner()).0.clone()
+    }
+
+    pub(crate) fn remade(&self) -> Option<Remade> {
+        self.status.lock().unwrap_or_else(|e| e.into_inner()).1.clone()
     }
 }
 

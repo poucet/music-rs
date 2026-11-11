@@ -223,6 +223,21 @@ pub enum AppStatus {
     Failed { error: String },
 }
 
+/// A running tap that was made again because it went bad while its apps
+/// were still wanted: it stopped calling back while one played (as after
+/// the Mac sleeps), or its clock device disappeared. Read by
+/// [`AppCapture::remade`](crate::AppCapture::remade), so a UI can say the
+/// tap reconnected; the status alone goes from tapping to tapping.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Remade {
+    /// How many times so far.
+    pub times: u32,
+    /// When the last time was.
+    pub at: Instant,
+    /// Why, the last time ("the tap stopped delivering audio …").
+    pub why: String,
+}
+
 impl AppStatus {
     pub fn is_tapping(&self) -> bool {
         matches!(self, AppStatus::Tapping { .. })
@@ -338,12 +353,28 @@ pub(crate) struct Follow<B: Backend> {
     status: AppStatus,
     /// The last targets that failed to open, and when.
     failed: Option<(Vec<Target>, Instant)>,
+    /// The last time a running tap went bad and was made again.
+    remade: Option<Remade>,
 }
 
 impl<B: Backend> Follow<B> {
     pub(crate) fn new(backend: B, tap: AppTap, this: i32, sink: Sink) -> Follow<B> {
         let status = AppStatus::Waiting { waiting_for: tap.names(), reason: None };
-        Follow { backend, tap, this, sink: Some(sink), open: None, status, failed: None }
+        Follow {
+            backend,
+            tap,
+            this,
+            sink: Some(sink),
+            open: None,
+            status,
+            failed: None,
+            remade: None,
+        }
+    }
+
+    /// The last time a running tap went bad and was made again, if one has.
+    pub(crate) fn remade(&self) -> Option<&Remade> {
+        self.remade.as_ref()
     }
 
     #[cfg(test)]
@@ -386,6 +417,10 @@ impl<B: Backend> Follow<B> {
                 return &self.status;
             }
             let open = self.open.take().expect("checked above");
+            if let (true, Some(why)) = (want, &problem) {
+                let times = self.remade.as_ref().map_or(0, |r| r.times) + 1;
+                self.remade = Some(Remade { times, at: now, why: why.clone() });
+            }
             if !want {
                 reason =
                     Some(problem.unwrap_or_else(|| format!("{} exited", describe(&open.procs))));
@@ -1023,8 +1058,51 @@ pub(crate) mod tests {
         f.tick(t);
         fake.0.borrow_mut().sick = Some("output device \"AirPods\" disappeared".into());
         assert!(f.tick(t).is_tapping());
+        let r = f.remade().expect("remade");
+        assert_eq!(
+            (r.times, r.at, r.why.as_str()),
+            (1, t, "output device \"AirPods\" disappeared")
+        );
         let s = fake.0.borrow();
         assert_eq!((s.closed.as_slice(), s.live.as_slice()), (&[1][..], &[2][..]));
+    }
+
+    /// A tap that stalls while its app plays (the Mac slept) is made again
+    /// and says so, counting each time; one closed because its app exited
+    /// or its processes changed was not remade, and says nothing; a remake
+    /// that fails is still counted (the old tap went bad).
+    #[test]
+    fn a_tap_remade_after_it_went_silent_says_when_and_how_often() {
+        let (fake, mut f) = follow(AppTap::only([App::parse(DJAY)]));
+        let t = Instant::now();
+        set(&fake, vec![proc(10, 412, DJAY, DJAY_EXE)]);
+        assert!(f.tick(t).is_tapping());
+        assert_eq!(f.remade(), None, "made, not remade");
+        // Its processes change under it: made again, but nothing went bad.
+        set(&fake, vec![proc(11, 412, DJAY, DJAY_EXE)]);
+        assert!(f.tick(t).is_tapping());
+        assert_eq!(f.remade(), None);
+        // Asleep: it stops calling back while djay plays.
+        fake.0.borrow_mut().silent = true;
+        assert!(f.tick(t + STALL).is_tapping());
+        fake.0.borrow_mut().silent = false;
+        let r = f.remade().expect("remade").clone();
+        assert_eq!(
+            (r.times, r.at, r.why.as_str()),
+            (1, t + STALL, "the tap stopped delivering audio")
+        );
+        // Again, and this time the remake fails: counted, and failing.
+        fake.0.borrow_mut().sick = Some("the tap stopped delivering audio".into());
+        fake.0.borrow_mut().fail = Some("OSStatus 'nope'".into());
+        assert!(matches!(f.tick(t + STALL * 2), AppStatus::Failed { .. }));
+        assert_eq!(f.remade().map(|r| r.times), Some(2));
+        assert!(f.tick(t + STALL * 2 + RETRY).is_tapping());
+        assert_eq!(f.remade().map(|r| r.times), Some(2), "the retry is no new remake");
+        // djay exits: closed, waited for, not remade.
+        fake.0.borrow_mut().sick = Some("output device \"AirPods\" disappeared".into());
+        set(&fake, vec![]);
+        assert!(matches!(f.tick(t + STALL * 3 + RETRY), AppStatus::Waiting { .. }));
+        assert_eq!(f.remade().map(|r| r.times), Some(2));
     }
 
     #[test]

@@ -120,7 +120,7 @@ mod watch;
 
 use resample::Resampler;
 
-pub use apps::{App, AppInfo, AppStatus, AppTap, Apps, Mute};
+pub use apps::{App, AppInfo, AppStatus, AppTap, Apps, Mute, Remade};
 pub use channels::{AppChannel, AppSinks, CHANNEL_HOLD, ChannelState, ChannelsStatus};
 
 use std::fmt;
@@ -444,6 +444,18 @@ impl AppCapture {
     pub fn status(&self) -> AppStatus {
         #[cfg(target_os = "macos")]
         return self.following.status();
+        #[cfg(not(target_os = "macos"))]
+        unreachable!("an AppCapture is only made on macOS")
+    }
+
+    /// The last time its running tap went bad and was made again (it
+    /// stopped calling back while an app played, as after the Mac sleeps,
+    /// or its clock device disappeared), and how many times so far. The
+    /// status goes from tapping to tapping meanwhile: this is what says it
+    /// reconnected. None until it has.
+    pub fn remade(&self) -> Option<Remade> {
+        #[cfg(target_os = "macos")]
+        return self.following.remade();
         #[cfg(not(target_os = "macos"))]
         unreachable!("an AppCapture is only made on macOS")
     }
