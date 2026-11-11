@@ -182,13 +182,19 @@ mod tests {
     }
 
     /// The live tree agrees with the fake one on this very process — no audio,
-    /// no devices, just the tree the kernel already has.
+    /// no devices, just the tree the kernel already has. The walk ends at
+    /// launchd, or where macOS won't name a parent to this user: a terminal
+    /// session started by `login`, which runs as root, ends there.
     #[test]
     fn the_live_walk_reaches_launchd_from_this_test() {
         let me = std::process::id() as i32;
         let c = live_chain(me);
         assert!(!c.is_empty(), "this test has a parent");
-        assert_eq!(c.last().map(|a| a.pid), Some(1), "the walk reaches launchd: {c:?}");
+        let last = c.last().map(|a| a.pid).unwrap();
+        assert!(
+            last == 1 || Live.ppid(last).is_none(),
+            "the walk reaches launchd or a parent it can't read: {c:?}"
+        );
         assert!(c.iter().all(|a| a.pid > 0));
     }
 }
