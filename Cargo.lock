@@ -61,7 +61,7 @@ checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
 name = "audiowatch"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "async-trait",
  "audiowatch-clock",
@@ -79,7 +79,7 @@ dependencies = [
 
 [[package]]
 name = "audiowatch-clock"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "audiowatch-record",
  "midir",
@@ -90,7 +90,7 @@ dependencies = [
 
 [[package]]
 name = "audiowatch-record"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "cpal",
  "hound",
@@ -1691,8 +1691,8 @@ checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
 
 [[package]]
 name = "simply-api"
-version = "0.1.1"
-source = "git+https://github.com/simply-audio/simply-api?tag=v0.1.1#fd1fc844c153195838d498019c4a6686c4eccdc7"
+version = "0.2.0"
+source = "git+https://github.com/simply-audio/simply-api?tag=v0.2.0#354921a057d6a3826eea34b9bcefb3f64e48983c"
 dependencies = [
  "async-trait",
  "rmcp",
@@ -1707,8 +1707,8 @@ dependencies = [
 
 [[package]]
 name = "simply-api-macros"
-version = "0.1.1"
-source = "git+https://github.com/simply-audio/simply-api?tag=v0.1.1#fd1fc844c153195838d498019c4a6686c4eccdc7"
+version = "0.2.0"
+source = "git+https://github.com/simply-audio/simply-api?tag=v0.2.0#354921a057d6a3826eea34b9bcefb3f64e48983c"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1717,7 +1717,7 @@ dependencies = [
 
 [[package]]
 name = "simply-audio-capture"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "cpal",
  "libc",
@@ -1730,14 +1730,14 @@ dependencies = [
 
 [[package]]
 name = "simply-audio-device"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "cpal",
 ]
 
 [[package]]
 name = "simply-fugue"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "schemars",
  "serde",
@@ -1746,15 +1746,15 @@ dependencies = [
 
 [[package]]
 name = "simply-history"
-version = "0.1.1"
-source = "git+https://github.com/simply-audio/simply-api?tag=v0.1.1#fd1fc844c153195838d498019c4a6686c4eccdc7"
+version = "0.2.0"
+source = "git+https://github.com/simply-audio/simply-api?tag=v0.2.0#354921a057d6a3826eea34b9bcefb3f64e48983c"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "simply-link"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "if-addrs",
  "socket2",
@@ -1762,7 +1762,7 @@ dependencies = [
 
 [[package]]
 name = "simply-link-midi"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "ctrlc",
  "serde_json",
@@ -1772,7 +1772,7 @@ dependencies = [
 
 [[package]]
 name = "simply-midi"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "midir",
  "simply-midi",
@@ -1781,15 +1781,15 @@ dependencies = [
 
 [[package]]
 name = "simply-midi-clock"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "midir",
 ]
 
 [[package]]
 name = "simply-op-macros"
-version = "0.1.1"
-source = "git+https://github.com/simply-audio/simply-api?tag=v0.1.1#fd1fc844c153195838d498019c4a6686c4eccdc7"
+version = "0.2.0"
+source = "git+https://github.com/simply-audio/simply-api?tag=v0.2.0#354921a057d6a3826eea34b9bcefb3f64e48983c"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1798,7 +1798,7 @@ dependencies = [
 
 [[package]]
 name = "simply-osc"
-version = "1.1.0"
+version = "1.2.0"
 
 [[package]]
 name = "slab"

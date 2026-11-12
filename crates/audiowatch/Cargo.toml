@@ -27,7 +27,7 @@ midi-clock = ["dep:audiowatch-clock"]
 audiowatch-record = { workspace = true, features = ["schema"] }
 audiowatch-clock = { workspace = true, features = ["schema"], optional = true }
 # The same tag tussen takes, so a build that has both resolves one copy.
-simply-api = { git = "https://github.com/simply-audio/simply-api", tag = "v0.1.1" }
+simply-api = { git = "https://github.com/simply-audio/simply-api", tag = "v0.2.0" }
 async-trait = "0.1"
 axum = "0.8"
 # 3.7 for `ServerConfig` and `ClientConfig`, the names that replaced the

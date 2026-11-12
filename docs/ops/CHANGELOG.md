@@ -3,7 +3,17 @@
 What got added, per landing — dated with a clock and the jj change id. The entry
 format is stated once in AGENTS.md §2.
 
-## Unreleased
+## 1.2.0 — 2026-11-12
+
+#### The repo lives at `simply-audio/music-rs`; `audiowatch` on simply-api 0.2.0 · 2026-11-12 21:55 · lnuxzxzt, vsttvmtk
+
+- Git dependencies and links point at https://github.com/simply-audio; pin
+  `tag = "v1.2.0"` there. Each crate ships a README of its own.
+- `audiowatch` builds on `simply-api` `v0.2.0`. Nothing changes for you.
+
+#### `simply-audio-device` tests skip a device-less Linux machine (`AUDIO-DEVICE`) · 2026-11-12 21:11 · tlzzxrus
+
+- The default-device tests now skip, rather than fail, on a Linux machine with no sound card, where ALSA still names a "default" device that opens nothing. Nothing changes for you; this is what keeps headless CI green. It brings across the one thing flux's copy of the crate had that this one lacked, so flux can drop its copy.
 
 #### An app tap says when it reconnected · 2026-11-11 08:06 · wltvulrr
 
