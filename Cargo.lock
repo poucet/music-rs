@@ -1692,7 +1692,7 @@ checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
 [[package]]
 name = "simply-api"
 version = "0.1.1"
-source = "git+https://github.com/poucet/simply-api?tag=v0.1.1#fd1fc844c153195838d498019c4a6686c4eccdc7"
+source = "git+https://github.com/simply-audio/simply-api?tag=v0.1.1#fd1fc844c153195838d498019c4a6686c4eccdc7"
 dependencies = [
  "async-trait",
  "rmcp",
@@ -1708,7 +1708,7 @@ dependencies = [
 [[package]]
 name = "simply-api-macros"
 version = "0.1.1"
-source = "git+https://github.com/poucet/simply-api?tag=v0.1.1#fd1fc844c153195838d498019c4a6686c4eccdc7"
+source = "git+https://github.com/simply-audio/simply-api?tag=v0.1.1#fd1fc844c153195838d498019c4a6686c4eccdc7"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1747,7 +1747,7 @@ dependencies = [
 [[package]]
 name = "simply-history"
 version = "0.1.1"
-source = "git+https://github.com/poucet/simply-api?tag=v0.1.1#fd1fc844c153195838d498019c4a6686c4eccdc7"
+source = "git+https://github.com/simply-audio/simply-api?tag=v0.1.1#fd1fc844c153195838d498019c4a6686c4eccdc7"
 dependencies = [
  "serde",
 ]
@@ -1789,7 +1789,7 @@ dependencies = [
 [[package]]
 name = "simply-op-macros"
 version = "0.1.1"
-source = "git+https://github.com/poucet/simply-api?tag=v0.1.1#fd1fc844c153195838d498019c4a6686c4eccdc7"
+source = "git+https://github.com/simply-audio/simply-api?tag=v0.1.1#fd1fc844c153195838d498019c4a6686c4eccdc7"
 dependencies = [
  "proc-macro2",
  "quote",

@@ -2,7 +2,7 @@
 
 > music-rs is a [simply.audio lab](http://simply.audio) project.
 
-Canonical musical definitions, performance sequencing models, and tool contracts shared across the Simply audio ecosystem (including [Nexus](https://github.com/poucet/nexus) and Flux).
+Canonical musical definitions, performance sequencing models, and tool contracts shared across the Simply audio ecosystem (including [Nexus](https://github.com/simply-audio/nexus) and Flux).
 
 ## Overview
 
@@ -60,7 +60,7 @@ Add `simply-fugue` from GitHub to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-simply-fugue = { git = "https://github.com/poucet/music-rs.git" }
+simply-fugue = { git = "https://github.com/simply-audio/music-rs.git" }
 ```
 
 ### Parsing Note Names
