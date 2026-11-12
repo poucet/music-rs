@@ -269,13 +269,27 @@ mod tests {
         }
     }
 
+    /// Does this device answer as a working one — a default config for the
+    /// direction? A Linux machine with no sound card still names an ALSA
+    /// "default" device that opens nothing, and that is the headless case.
+    fn usable(device: &SelectedDevice, direction: Direction) -> bool {
+        match direction {
+            Direction::Input => device.device.default_input_config().is_ok(),
+            Direction::Output => device.device.default_output_config().is_ok(),
+        }
+    }
+
     /// On a machine with audio: the default device resolves, its name appears
     /// in the enumeration, and selecting it by that name round-trips — on
-    /// both sides. Headless CI (no devices) skips.
+    /// both sides. Headless CI (no devices, or Linux's device-less ALSA
+    /// "default") skips.
     #[test]
     fn default_devices_round_trip_by_name() {
         for direction in BOTH {
             let Ok(default) = select(direction, None) else { continue };
+            if !usable(&default, direction) {
+                continue;
+            }
             assert!(!default.name.is_empty());
             assert!(
                 device_names(direction).contains(&default.name),
@@ -294,6 +308,9 @@ mod tests {
     #[test]
     fn an_input_device_that_cannot_reach_the_rate_is_refused() {
         let Ok(input) = select_input(None) else { return };
+        if !usable(&input, Direction::Input) {
+            return;
+        }
         match f32_input_config(&input.device, 1) {
             Err(Error::UnsupportedSampleRate(1) | Error::UnsupportedSampleFormat(_)) => {}
             Err(other) => panic!("expected a rate refusal, got {other}"),
