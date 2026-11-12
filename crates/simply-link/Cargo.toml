@@ -4,6 +4,7 @@ description = "Ableton Link — an independent Rust implementation of the protoc
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+readme = "README.md"
 
 [dependencies]
 # SO_REUSEADDR/SO_REUSEPORT on the discovery socket, so several Link peers

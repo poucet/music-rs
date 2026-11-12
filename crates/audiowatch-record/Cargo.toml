@@ -4,6 +4,7 @@ description = "Record any channel pair of any audio device to 32-bit float WAV: 
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+readme = "README.md"
 
 [features]
 # JSON schemas for the recording types, for the MCP surface. Off by default

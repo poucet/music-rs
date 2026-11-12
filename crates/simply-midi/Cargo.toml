@@ -4,6 +4,7 @@ description = "MIDI 1.0 channel-voice decoding and midir device input — the pr
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+readme = "README.md"
 
 [features]
 # Live device input (midir). Off for a consumer that only wants the decoder

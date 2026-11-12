@@ -4,6 +4,7 @@ description = "Capture any audio device by name: its inputs through cpal, or, fo
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+readme = "README.md"
 
 [dependencies]
 cpal.workspace = true

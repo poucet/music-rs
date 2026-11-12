@@ -4,6 +4,7 @@ description = "MIDI beat clock out: the real-time messages, the follower's posit
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+readme = "README.md"
 
 [features]
 # Open output ports through midir. Off for a consumer that only wants the
